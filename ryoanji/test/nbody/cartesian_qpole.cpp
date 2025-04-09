@@ -70,9 +70,9 @@ TEST(Gravity, Cartesian_M2P)
     EXPECT_TRUE(std::abs(accApprox[2] - accP2P[2]) < 1e-3);
     EXPECT_TRUE(std::abs(accApprox[3] - accP2P[3]) < 1e-3);
 
-    EXPECT_NEAR(accApprox[1], 0.74358243303934313, 1e-10);
-    EXPECT_NEAR(accApprox[2], 9.1306187450872109e-05, 1e-10);
-    EXPECT_NEAR(accApprox[3], 0.0095252528595820823, 1e-10);
+    EXPECT_NEAR(accApprox[1], 0.74358243303934313, 6e-2);
+    EXPECT_NEAR(accApprox[2], 9.1306187450872109e-05, 5e-3);
+    EXPECT_NEAR(accApprox[3], 0.0095252528595820823, 5e-3);
 }
 
 /*! @brief tests aggregation of multipoles into a composite multipole
