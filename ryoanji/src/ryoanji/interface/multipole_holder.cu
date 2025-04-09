@@ -85,13 +85,13 @@ public:
         auto ryUpsweep = [](auto levelRange, auto childOffsets, auto M, auto centers)
         { upsweepMultipoles(levelRange, childOffsets.data(), centers, M); };
 
-        std::span multipoleSpan{multipoles, size_t(octree_.numNodes)};
+        gsl::span multipoleSpan{multipoles, size_t(octree_.numNodes)};
         cstone::globalFocusExchange(globalOctree, focusTree, multipoleSpan, ryUpsweep, globalCenters.data());
 
         // H2D multipoles
         memcpyH2D(multipoles, multipoles_.size(), rawPtr(multipoles_));
 
-        std::span d_multipoleSpan{rawPtr(multipoles_), size_t(octree_.numNodes)};
+        gsl::span d_multipoleSpan{rawPtr(multipoles_), size_t(octree_.numNodes)};
         focusTree.peerExchangeGpu(d_multipoleSpan, static_cast<int>(cstone::P2pTags::focusPeerCenters) + 1,
                                   traversalStack_);
 

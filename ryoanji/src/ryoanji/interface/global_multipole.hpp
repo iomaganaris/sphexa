@@ -33,7 +33,7 @@ void computeGlobalMultipoles(const Tc* x, const Tc* y, const Tc* z, const Tm* m,
     auto centers       = focusTree.expansionCentersAcc();
     auto globalCenters = focusTree.globalExpansionCenters();
 
-    std::span multipoleSpan{multipoles, size_t(octree.numNodes)};
+    gsl::span multipoleSpan{multipoles, size_t(octree.numNodes)};
     ryoanji::computeLeafMultipoles(x, y, z, m,
                                    {octree.leafToInternal + octree.numInternalNodes, size_t(octree.numLeafNodes)},
                                    layout, centers.data(), multipoles);

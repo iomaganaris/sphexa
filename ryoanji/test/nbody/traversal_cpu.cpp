@@ -14,6 +14,7 @@
  */
 
 #include <chrono>
+#include <span>
 
 #include "gtest/gtest.h"
 
