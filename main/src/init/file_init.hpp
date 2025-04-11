@@ -156,8 +156,14 @@ public:
             reader->readField("z", z0.data());
 
             std::vector<KeyType> keys(numParticlesInFile);
+            #ifdef CSTONE_MIXD
+            const auto mixDBits = cstone::getBoxMixDimensionBits<T, KeyType>(box);
+            cstone::computeSfcMixDKeys(x0.data(), y0.data(), z0.data(), cstone::SfcMixDKindPointer(keys.data()),
+                                   numParticlesInFile, box, mixDBits.bx, mixDBits.by, mixDBits.bz);
+            #else
             cstone::computeSfcKeys(x0.data(), y0.data(), z0.data(), cstone::sfcKindPointer(keys.data()),
                                    numParticlesInFile, box);
+            #endif
             std::iota(sfcOrder.begin(), sfcOrder.end(), 0);
             cstone::sort_by_key(keys.begin(), keys.end(), sfcOrder.begin());
 

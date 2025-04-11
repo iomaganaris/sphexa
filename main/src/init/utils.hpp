@@ -54,7 +54,13 @@ void sortBySfcKey(std::vector<T>& x, std::vector<T>& y, std::vector<T>& z)
     cstone::Box<T> box(0, 1);
 
     std::vector<KeyType> keys(blockSize);
+    #ifdef CSTONE_MIXD
+    const auto mixDBits = cstone::getBoxMixDimensionBits<T, KeyType>(box);
+    computeSfcMixDKeys(x.data(), y.data(), z.data(), cstone::SfcMixDKindPointer(keys.data()), blockSize, box,
+                   mixDBits.bx, mixDBits.by, mixDBits.bz);
+    #else
     computeSfcKeys(x.data(), y.data(), z.data(), cstone::sfcKindPointer(keys.data()), blockSize, box);
+    #endif
 
     std::vector<cstone::LocalIndex> sfcOrder(blockSize);
     std::iota(begin(sfcOrder), end(sfcOrder), cstone::LocalIndex(0));
