@@ -157,7 +157,7 @@ public:
 
             std::vector<KeyType> keys(numParticlesInFile);
             #ifdef CSTONE_MIXD
-            const auto mixDBits = cstone::getBoxMixDimensionBits<T, KeyType>(box);
+            const auto mixDBits = cstone::getBoxMixDimensionBits<T, KeyType, cstone::Box<T>>(box);
             cstone::computeSfcMixDKeys(x0.data(), y0.data(), z0.data(), cstone::SfcMixDKindPointer(keys.data()),
                                    numParticlesInFile, box, mixDBits.bx, mixDBits.by, mixDBits.bz);
             #else
