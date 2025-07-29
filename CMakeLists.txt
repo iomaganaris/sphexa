@@ -17,8 +17,6 @@ option(BUILD_ANALYTICAL "build analytical solution" ON)
 option(SPH_EXA_WITH_CUDA "Enable building for NVIDIA GPUs" ON)
 option(SPH_EXA_WITH_HIP "Enable building for AMD GPUs" ON)
 
-option(CSTONE_MIXD "Enable mixed dimension cstone" OFF)
-
 set(CSTONE_DIR ${PROJECT_SOURCE_DIR}/domain/include)
 set(CSTONE_TEST_DIR ${PROJECT_SOURCE_DIR}/domain/test)
 
@@ -104,13 +102,6 @@ if (SPH_EXA_WITH_GRACKLE)
 endif()
 
 option(SPH_EXA_WITH_DISKS "Enable disk physics and propagator" OFF)
-
-if (CSTONE_MIXD)
-    message(STATUS "Mixed dimension support is enabled")
-    add_compile_definitions(CSTONE_MIXD=1)
-else()
-    message(STATUS "Mixed dimension support is disabled")
-endif()
 
 add_subdirectory(domain)
 add_subdirectory(ryoanji)
