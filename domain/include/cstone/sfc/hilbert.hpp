@@ -389,10 +389,6 @@ template<class KeyType>
 HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
 decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
 {
-    // if (!isValidHilbertMixDKey(key, bx, by, bz))
-    // {
-    //     std::cout << "Invalid key for the given bx, by, bz: " << key << " " << bx << " " << by << " " << bz << std::endl;
-    // }
     // Sort bits[] descending while tracking permutation[] — 3-element sort network (GPU-friendly)
     unsigned bits[3]   = {bx, by, bz};
     int permutation[3] = {0, 1, 2};
@@ -438,12 +434,10 @@ decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
         }
         key &= (static_cast<KeyType>(1) << (3 * bits[1])) - 1;
     }
-    const auto keyBefore2D = key;
+    KeyType key2D{};
     if (bits[1] > bits[2]) // 2 dims have more bits than the 3rd, add 2D levels
     {
         const int n = bits[1] - bits[2];
-        // const auto key2D  = key >> (3 * bits[2]);
-        KeyType key2D{};
         for (int i{}; i < n; ++i)
         {
             const auto processes2DKeyBitIndex      = n - 1 - i;
@@ -451,66 +445,45 @@ decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
             key2D |= static_cast<KeyType>(static_cast<KeyType>(key >> (3 * processesCoordinateBitIndex)) & 3)
                      << (2 * processes2DKeyBitIndex);
         }
-        const auto order2D = (bits[1] - bits[2]) % 2 == 1 ? bits[1] - bits[2] + 1 : bits[1] - bits[2];
-        const auto pair2D = decodeHilbert2D<KeyType>(key2D, order2D);
-        coordinates[0] |= (get<1>(pair2D) & ((static_cast<KeyType>(1) << n) - 1)) << bits[2];
-        coordinates[1] |= (get<0>(pair2D) & ((static_cast<KeyType>(1) << n) - 1)) << bits[2];
+        const auto pair2D = decodeHilbert2D<KeyType>(key2D, n);
+        coordinates[0] |= static_cast<KeyType>(get<0>(pair2D)) << bits[2];
+        coordinates[1] |= static_cast<KeyType>(get<1>(pair2D)) << bits[2];
         key &= (static_cast<KeyType>(1) << (3 * bits[2])) - 1;
     }
 
-#ifndef __CUDA_ARCH__
-    // std::cout << "key before 2D (octal): " << std::showbase << std::oct << keyBefore2D << std::dec << std::endl;
-    // std::cout << "key (octal): " << std::showbase << std::oct << key << std::dec << std::endl;
-    // std::cout << "bits: " << bits[0] << " " << bits[1] << " " << bits[2] << std::endl;
-    const auto rotationBit2Dto3D = (keyBefore2D >> (3 * bits[2])) & 3u;
-    // std::cout << "rotationBit2Dto3D: " << rotationBit2Dto3D << std::endl;
-    unsigned orderOffset{};
-    if (rotationBit2Dto3D == 0) {
-        orderOffset = 1;
-    } else if (rotationBit2Dto3D == 1) {
-        orderOffset = 1;
-    } else if (rotationBit2Dto3D == 2) {
-        orderOffset = 1;
-    } else if (rotationBit2Dto3D == 3) {
-        orderOffset = 0;
-    }
-    const auto order3D = bits[2] % 2 == 0 ? bits[2] + orderOffset : bits[2] + 1 + orderOffset;
-    // std::cout << "order: " << order << std::endl;
-    // const auto maskFirst3DOctAfter2D = bits[2] > 2 ? (static_cast<KeyType>(7) << (3 * (bits[2] - 1))) & ((static_cast<KeyType>(1) << (3 * bits[2]-2)) - 1) : (static_cast<KeyType>(7) << (3 * (bits[2] - 1)));
-    // std::cout << "maskFirst3DOctAfter2D (octal): " << std::showbase << std::oct << maskFirst3DOctAfter2D << std::dec << std::endl;
-    // const auto first3DOctAfter2D = (key & maskFirst3DOctAfter2D) >> (3 * (bits[2] - 1));
-    // std::cout << "first3DOctAfter2D (bin): " << std::bitset<3>(first3DOctAfter2D) << std::endl;
-    // const auto xFirst3DOctAfter2D = (first3DOctAfter2D >> 2) & 1u;
-    // const auto yFirst3DOctAfter2D = (first3DOctAfter2D >> 1) & 1u;
-    // const auto zFirst3DOctAfter2D = first3DOctAfter2D & 1u;
-    // // Swap x and z
-    // const auto newFirst3DOctAfter2D = (zFirst3DOctAfter2D << 2) | (xFirst3DOctAfter2D << 1) | yFirst3DOctAfter2D;
-    // std::cout << "newFirst3DOctAfter2D (bin): " << std::bitset<3>(newFirst3DOctAfter2D) << std::dec << std::endl;
-    // key = (key & ~maskFirst3DOctAfter2D) | (static_cast<KeyType>(newFirst3DOctAfter2D) << (3 * (bits[2] - 1)));
-    // std::cout << "key after swapping x and y in the first 3D oct (octal): " << std::showbase << std::oct << key << std::dec << std::endl;
-#endif
-    const auto pair3D = decodeHilbert<KeyType>(key, order3D);
-    if (rotationBit2Dto3D == 0) {
+    const auto key2DLastQuadBits = key2D & 3u;
+    if (key2DLastQuadBits == 0) {
+        const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+        const auto pair3D  = decodeHilbert<KeyType>(key, order);
         coordinates[0] |= get<1>(pair3D);
         coordinates[1] |= get<2>(pair3D);
         coordinates[2] |= get<0>(pair3D);
-    } else if (rotationBit2Dto3D == 1) {
-        coordinates[0] |= get<2>(pair3D);
-        coordinates[1] |= get<0>(pair3D);
-        coordinates[2] |= get<1>(pair3D);
-    } else if (rotationBit2Dto3D == 2) {
-        coordinates[0] |= get<2>(pair3D);
-        coordinates[1] |= get<0>(pair3D);
-        coordinates[2] |= get<1>(pair3D);
-    } else if (rotationBit2Dto3D == 3) {
-        const unsigned maxCoord = (1u << order3D) - 1u;
-        coordinates[0] |= maxCoord - get<2>(pair3D);
-        coordinates[1] |= maxCoord - get<0>(pair3D);
-        coordinates[2] |= get<1>(pair3D);
     }
-    // coordinates[0] |= get<0>(pair3D);
-    // coordinates[1] |= get<1>(pair3D);
-    // coordinates[2] |= get<2>(pair3D);
+    else if (key2DLastQuadBits == 1)
+    {
+        const auto order = bits[2];
+        const auto pair3D  = decodeHilbert<KeyType>(key, order);
+        coordinates[0] |= get<0>(pair3D);
+        coordinates[1] |= get<1>(pair3D);
+        coordinates[2] |= get<2>(pair3D);
+    }
+    else if (key2DLastQuadBits == 2)
+    {
+        const auto order = bits[2];
+        const auto pair3D  = decodeHilbert<KeyType>(key, order);
+        coordinates[0] |= get<0>(pair3D);
+        coordinates[1] |= get<1>(pair3D);
+        coordinates[2] |= get<2>(pair3D);
+    }
+    else if (key2DLastQuadBits == 3)
+    {
+        const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+        const auto pair3D  = decodeHilbert<KeyType>(key, order);
+        const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
+        coordinates[0] |= maxCoord - get<1>(pair3D);
+        coordinates[1] |= maxCoord - get<2>(pair3D);
+        coordinates[2] |= get<0>(pair3D);
+    }
 
     KeyType returnCoordinates[3]      = {0, 0, 0};
     returnCoordinates[permutation[0]] = coordinates[0];
