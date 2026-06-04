@@ -451,38 +451,151 @@ decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
         key &= (static_cast<KeyType>(1) << (3 * bits[2])) - 1;
     }
 
-    const auto key2DLastQuadBits = key2D & 3u;
-    if (key2DLastQuadBits == 0) {
-        const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
-        const auto pair3D  = decodeHilbert<KeyType>(key, order);
-        coordinates[0] |= get<1>(pair3D);
-        coordinates[1] |= get<2>(pair3D);
-        coordinates[2] |= get<0>(pair3D);
-    }
-    else if (key2DLastQuadBits == 1)
-    {
-        const auto order = bits[2];
-        const auto pair3D  = decodeHilbert<KeyType>(key, order);
-        coordinates[0] |= get<0>(pair3D);
-        coordinates[1] |= get<1>(pair3D);
-        coordinates[2] |= get<2>(pair3D);
-    }
-    else if (key2DLastQuadBits == 2)
-    {
-        const auto order = bits[2];
-        const auto pair3D  = decodeHilbert<KeyType>(key, order);
-        coordinates[0] |= get<0>(pair3D);
-        coordinates[1] |= get<1>(pair3D);
-        coordinates[2] |= get<2>(pair3D);
-    }
-    else if (key2DLastQuadBits == 3)
-    {
-        const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
-        const auto pair3D  = decodeHilbert<KeyType>(key, order);
-        const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
-        coordinates[0] |= maxCoord - get<1>(pair3D);
-        coordinates[1] |= maxCoord - get<2>(pair3D);
-        coordinates[2] |= get<0>(pair3D);
+    if (bits[1] - bits[2] == 1) {
+        const auto key2DLastQuadBits = key2D & 3u;
+#ifndef __CUDA_ARCH__
+        std::cout << "key2DLastQuadBits: " << key2DLastQuadBits << std::endl;
+#endif
+        if (key2DLastQuadBits == 0) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<1>(pair3D);
+            coordinates[1] |= get<2>(pair3D);
+            coordinates[2] |= get<0>(pair3D);
+        }
+        else if (key2DLastQuadBits == 1)
+        {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<0>(pair3D);
+            coordinates[1] |= get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        }
+        else if (key2DLastQuadBits == 2)
+        {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<0>(pair3D);
+            coordinates[1] |= get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        }
+        else if (key2DLastQuadBits == 3)
+        {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
+            coordinates[0] |= maxCoord - get<1>(pair3D);
+            coordinates[1] |= maxCoord - get<2>(pair3D);
+            coordinates[2] |= get<0>(pair3D);
+        }
+    } else if (bits[1] - bits[2] == 2) {
+        const auto key2DLast2QuadBits = key2D & 15u;
+#ifndef __CUDA_ARCH__
+        std::cout << "key2DLast2QuadBits: " << key2DLast2QuadBits << std::endl;
+#endif
+        if (key2DLast2QuadBits == 0) {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<0>(pair3D);
+            coordinates[1] |= get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        } else if (key2DLast2QuadBits == 1) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<2>(pair3D);
+            coordinates[1] |= get<0>(pair3D);
+            coordinates[2] |= get<1>(pair3D);
+        } else if (key2DLast2QuadBits == 2) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<2>(pair3D);
+            coordinates[1] |= get<0>(pair3D);
+            coordinates[2] |= get<1>(pair3D);
+        } else if (key2DLast2QuadBits == 3) {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
+            coordinates[0] |= maxCoord - get<0>(pair3D);
+            coordinates[1] |= maxCoord - get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        } else if (key2DLast2QuadBits == 4) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<2>(pair3D);
+            coordinates[1] |= get<0>(pair3D);
+            coordinates[2] |= get<1>(pair3D);
+        } else if (key2DLast2QuadBits == 5) {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<0>(pair3D);
+            coordinates[1] |= get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        } else if (key2DLast2QuadBits == 6) {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<0>(pair3D);
+            coordinates[1] |= get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        } else if (key2DLast2QuadBits == 7) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
+            coordinates[0] |= maxCoord - get<2>(pair3D);
+            coordinates[1] |= maxCoord - get<0>(pair3D);
+            coordinates[2] |= get<1>(pair3D);
+        } else if (key2DLast2QuadBits == 8) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<2>(pair3D);
+            coordinates[1] |= get<0>(pair3D);
+            coordinates[2] |= get<1>(pair3D);
+        } else if (key2DLast2QuadBits == 9) {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<0>(pair3D);
+            coordinates[1] |= get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        } else if (key2DLast2QuadBits == 10) {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<0>(pair3D);
+            coordinates[1] |= get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        } else if (key2DLast2QuadBits == 11) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
+            coordinates[0] |= maxCoord - get<2>(pair3D);
+            coordinates[1] |= maxCoord - get<0>(pair3D);
+            coordinates[2] |= get<1>(pair3D);
+        } else if (key2DLast2QuadBits == 12) {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
+            coordinates[0] |= maxCoord - get<0>(pair3D);
+            coordinates[1] |= maxCoord - get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        } else if (key2DLast2QuadBits == 13) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
+            coordinates[0] |= maxCoord - get<2>(pair3D);
+            coordinates[1] |= maxCoord - get<0>(pair3D);
+            coordinates[2] |= get<1>(pair3D);
+        } else if (key2DLast2QuadBits == 14) {
+            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
+            coordinates[0] |= maxCoord - get<2>(pair3D);
+            coordinates[1] |= maxCoord - get<0>(pair3D);
+            coordinates[2] |= get<1>(pair3D);
+        } else if (key2DLast2QuadBits == 15) {
+            const auto order = bits[2];
+            const auto pair3D  = decodeHilbert<KeyType>(key, order);
+            coordinates[0] |= get<0>(pair3D);
+            coordinates[1] |= get<1>(pair3D);
+            coordinates[2] |= get<2>(pair3D);
+        }
     }
 
     KeyType returnCoordinates[3]      = {0, 0, 0};
