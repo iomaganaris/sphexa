@@ -456,8 +456,8 @@ decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
 #ifndef __CUDA_ARCH__
         std::cout << "key2DLastQuadBits: " << key2DLastQuadBits << std::endl;
 #endif
+        const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
         if (key2DLastQuadBits == 0) {
-            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
             const auto pair3D  = decodeHilbert<KeyType>(key, order);
             coordinates[0] |= get<1>(pair3D);
             coordinates[1] |= get<2>(pair3D);
@@ -465,23 +465,20 @@ decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
         }
         else if (key2DLastQuadBits == 1)
         {
-            const auto order = bits[2];
             const auto pair3D  = decodeHilbert<KeyType>(key, order);
-            coordinates[0] |= get<0>(pair3D);
+            coordinates[0] |= get<2>(pair3D);
             coordinates[1] |= get<1>(pair3D);
-            coordinates[2] |= get<2>(pair3D);
+            coordinates[2] |= get<0>(pair3D);
         }
         else if (key2DLastQuadBits == 2)
         {
-            const auto order = bits[2];
             const auto pair3D  = decodeHilbert<KeyType>(key, order);
-            coordinates[0] |= get<0>(pair3D);
+            coordinates[0] |= get<2>(pair3D);
             coordinates[1] |= get<1>(pair3D);
-            coordinates[2] |= get<2>(pair3D);
+            coordinates[2] |= get<0>(pair3D);
         }
         else if (key2DLastQuadBits == 3)
         {
-            const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
             const auto pair3D  = decodeHilbert<KeyType>(key, order);
             const KeyType maxCoord = (static_cast<KeyType>(1) << bits[2]) - static_cast<KeyType>(1);
             coordinates[0] |= maxCoord - get<1>(pair3D);
