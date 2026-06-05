@@ -458,6 +458,8 @@ decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
 #endif
         const auto order = bits[2] % 2 == 1 ? bits[2] + 1 : bits[2];
         if (key2DLastQuadBits == 0) {
+            // TODO(iomaganaris): key rotation for different n := (bits[1] - bits[2]) changes because the 3D key starts at a different level.
+            // We have to figure out probably how to make this stable for any n.
             const auto pair3D  = decodeHilbert<KeyType>(key, order);
             coordinates[0] |= get<1>(pair3D);
             coordinates[1] |= get<2>(pair3D);
