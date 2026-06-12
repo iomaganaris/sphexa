@@ -45,7 +45,7 @@ HOST_DEVICE_FUN Vec4<T> computeMinMacR2(KeyType prefix, float invThetaEff, const
     KeyType nodeKey     = decodePlaceholderBit(prefix);
     int prefixLength    = decodePrefixLength(prefix);
 
-    IBox cellBox = sfcIBox(sfcMixDKey(nodeKey), maxTreeLevel<KeyType>{} - (prefixLength / 3), mixDBits.bx, mixDBits.by,
+    IBox cellBox = sfcIBox(sfcKey(nodeKey), (prefixLength / 3), mixDBits.bx, mixDBits.by,
                            mixDBits.bz);
     auto [geoCenter, geoSize] = centerAndSize<KeyType>(cellBox, box);
 
@@ -71,7 +71,7 @@ HOST_DEVICE_FUN T computeVecMacR2(KeyType prefix, Vec3<T> expCenter, float invTh
 
     const auto mixDBits = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
 
-    IBox cellBox = sfcIBox(sfcMixDKey(nodeKey), maxTreeLevel<KeyType>{} - (prefixLength / 3), mixDBits.bx, mixDBits.by,
+    IBox cellBox = sfcIBox(sfcKey(nodeKey), (prefixLength / 3), mixDBits.bx, mixDBits.by,
                            mixDBits.bz);
     auto [geoCenter, geoSize] = centerAndSize<KeyType>(cellBox, box);
 
@@ -215,23 +215,20 @@ void markMacs(const KeyType* prefixes,
     KeyType focusEnd   = focusNodes[numFocusNodes];
 
     const auto mixDBits = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
-    const bool useMixD  = mixDBits.bx != maxTreeLevel<KeyType>{} || mixDBits.by != maxTreeLevel<KeyType>{} ||
-                         mixDBits.bz != maxTreeLevel<KeyType>{};
 
 #pragma omp parallel for schedule(dynamic)
     for (TreeNodeIndex i = 0; i < numFocusNodes; ++i)
     {
         IBox target =
-            sfcIBox(sfcMixDKey(focusNodes[i]), sfcMixDKey(focusNodes[i + 1]), mixDBits.bx, mixDBits.by, mixDBits.bz);
+            sfcIBox(sfcKey(focusNodes[i]), sfcKey(focusNodes[i + 1]), mixDBits.bx, mixDBits.by, mixDBits.bz);
         if (target == IBox{}) { continue; }
 
         IBox targetExt = IBox(target.xmin() - 1, target.xmax() + 1, target.ymin() - 1, target.ymax() + 1,
                               target.zmin() - 1, target.zmax() + 1);
-        if (useMixD && containedIn(focusStart, focusEnd, targetExt, mixDBits.bx, mixDBits.by, mixDBits.bz))
+        if (containedIn(focusStart, focusEnd, targetExt, mixDBits.bx, mixDBits.by, mixDBits.bz))
         {
             continue;
         }
-        if (!useMixD && containedIn(focusStart, focusEnd, targetExt)) { continue; }
 
         auto [targetCenter, targetSize] = centerAndSize<KeyType>(target, box);
         assert(targetSize[0] != 0 && targetSize[1] != 0 && targetSize[2] != 0);

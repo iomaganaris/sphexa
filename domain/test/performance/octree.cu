@@ -163,6 +163,8 @@ int main(int argc, char** argv)
     thrust::device_vector<uint8_t> macs(octree.numNodes);
     thrust::device_vector<SourceCenterType<T>> centers(octree.numNodes);
 
+    const auto mixDBits = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
+
     float invTheta = 1.0 / 0.5;
     std::vector<SourceCenterType<double>> h_centers(octree.numNodes);
 #pragma omp parallel for schedule(static)
@@ -171,7 +173,7 @@ int main(int argc, char** argv)
         KeyType prefix   = h_octree.prefixes[i];
         KeyType startKey = decodePlaceholderBit(prefix);
         unsigned level   = decodePrefixLength(prefix) / 3;
-        auto nodeBox     = sfcIBox(sfcKey(startKey), level);
+        auto nodeBox     = sfcIBox(sfcKey(startKey), level, mixDBits.bx, mixDBits.by, mixDBits.bz);
         Vec3<T> center_i;
         util::tie(center_i, std::ignore) = centerAndSize<KeyType>(nodeBox, box);
 

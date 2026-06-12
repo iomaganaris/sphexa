@@ -267,9 +267,9 @@ void assembleCuboid(KeyType keyStart, KeyType keyEnd, const cstone::Box<T>& glob
 
     // span the assigned SFC range with valid octree cells
     auto                 gridSfcBits = getBoxMixDimensionBits<T, KeyType>(globalBox);
-    int                  numCells    = cstone::spanSfcRange(keyStart, keyEnd);
+    int                  numCells    = cstone::spanSfcRange(keyStart, keyEnd, cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{});
     std::vector<KeyType> cells(numCells + 1);
-    cstone::spanSfcRange(keyStart, keyEnd, cells.data());
+    cstone::spanSfcRange(keyStart, keyEnd, cells.data(), cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{});
     cells.back() = keyEnd;
 
     std::vector<std::tuple<cstone::FBox<T>, int, int, int>> tasks;
@@ -277,7 +277,7 @@ void assembleCuboid(KeyType keyStart, KeyType keyEnd, const cstone::Box<T>& glob
     // extract the volume of each cell from the virtual global glass block grid
     for (size_t i = 0; i < cstone::nNodes(cells); ++i)
     {
-        auto iBox      = cstone::sfcIBox(cstone::sfcMixDKey(cells[i]), cstone::sfcMixDKey(cells[i + 1]), gridSfcBits.bx,
+        auto iBox      = cstone::sfcIBox(cstone::sfcKey(cells[i]), cstone::sfcKey(cells[i + 1]), gridSfcBits.bx,
                                          gridSfcBits.by, gridSfcBits.bz);
         auto selectBox = cstone::createFpBox<KeyType>(iBox, globalBox);
 

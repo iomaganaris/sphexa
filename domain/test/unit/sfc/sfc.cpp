@@ -42,19 +42,20 @@ TEST(SFC, center)
     using KeyType = unsigned;
 
     Box<T> box(-1, 1);
+    const auto mixDBits = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
 
     {
         // The exact center belongs to octant farthest from the origin
         T x           = 0.0;
-        KeyType probe = sfc3D<HilbertKey<KeyType>>(x, x, x, box);
-        KeyType ref   = sfc3D<HilbertKey<KeyType>>(1.0, 1.0, 1.0, box);
+        KeyType probe = sfc3D<HilbertKey<KeyType>>(x, x, x, box, mixDBits.bx, mixDBits.by, mixDBits.bz);
+        KeyType ref   = sfc3D<HilbertKey<KeyType>>(1.0, 1.0, 1.0, box, mixDBits.bx, mixDBits.by, mixDBits.bz);
         EXPECT_EQ(octalDigit(probe, 1), octalDigit(ref, 1));
     }
     {
         // Center - epsilon should be in the octant closest to the origin
         T x           = -1e-40;
-        KeyType probe = sfc3D<HilbertKey<KeyType>>(x, x, x, box);
-        KeyType ref   = sfc3D<HilbertKey<KeyType>>(-1.0, -1.0, -1.0, box);
+        KeyType probe = sfc3D<HilbertKey<KeyType>>(x, x, x, box, mixDBits.bx, mixDBits.by, mixDBits.bz);
+        KeyType ref   = sfc3D<HilbertKey<KeyType>>(-1.0, -1.0, -1.0, box, mixDBits.bx, mixDBits.by, mixDBits.bz);
         EXPECT_EQ(octalDigit(probe, 1), octalDigit(ref, 1));
     }
 }

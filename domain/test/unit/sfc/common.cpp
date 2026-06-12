@@ -346,7 +346,7 @@ void spanSfcRange()
                                  07760, 07770, 07771, 07772, 07773, 07774, 07775, 07776};
         std::vector<I> probe(reference.size());
 
-        EXPECT_EQ(spanSfcRange(I(0), I(07777), probe.data()), 28);
+        EXPECT_EQ(spanSfcRange(I(0), I(07777), probe.data(), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}), 28);
         EXPECT_EQ(reference, probe);
     }
     {
@@ -354,7 +354,7 @@ void spanSfcRange()
                                  070, 0100, 0200, 0300, 0400, 0500, 0600, 0700, 0710, 0720, 0730, 0740, 0741};
         std::vector<I> probe(reference.size());
 
-        EXPECT_EQ(spanSfcRange(I(1), I(0742), probe.data()), 26);
+        EXPECT_EQ(spanSfcRange(I(1), I(0742), probe.data(), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}), 26);
         EXPECT_EQ(reference, probe);
     }
     {
@@ -362,24 +362,24 @@ void spanSfcRange()
                                  041370, 041400, 041500, 041600, 041700, 042000, 043000, 044000, 045000};
         std::vector<I> probe(reference.size());
 
-        EXPECT_EQ(spanSfcRange(I(041305), I(046000), probe.data()), 18);
+        EXPECT_EQ(spanSfcRange(I(041305), I(046000), probe.data(), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}), 18);
         EXPECT_EQ(reference, probe);
     }
 
-    EXPECT_EQ(spanSfcRange(I(040000), I(050000)), 1);
-    EXPECT_EQ(spanSfcRange(I(040000), I(060000)), 2);
+    EXPECT_EQ(spanSfcRange(I(040000), I(050000), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}), 1);
+    EXPECT_EQ(spanSfcRange(I(040000), I(060000), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}), 2);
 
     {
         std::vector<I> reference{pad(I(1), 3), pad(I(2), 3), pad(I(3), 3), pad(I(4), 3),
                                  pad(I(5), 3), pad(I(6), 3), pad(I(7), 3)};
         std::vector<I> probe(reference.size());
 
-        EXPECT_EQ(spanSfcRange(pad(I(01), 3), nodeRange<I>(0), probe.data()), 7);
+        EXPECT_EQ(spanSfcRange(pad(I(01), 3), nodeRange<I>(0), probe.data(), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}), 7);
         EXPECT_EQ(reference, probe);
     }
 
-    EXPECT_EQ(0, spanSfcRange(I(0), I(0)));
-    EXPECT_EQ(0, spanSfcRange(I(1), I(1)));
+    EXPECT_EQ(0, spanSfcRange(I(0), I(0), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}));
+    EXPECT_EQ(0, spanSfcRange(I(1), I(1), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}));
 }
 
 TEST(SfcCode, spanSfcRange32) { spanSfcRange<unsigned>(); }

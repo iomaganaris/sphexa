@@ -397,15 +397,15 @@ std::vector<KeyType> create_octree_from_key(KeyType key)
 {
     const auto range_max          = std::is_same_v<KeyType, unsigned> ? octalToDecimal<KeyType>("10000000000")
                                                                       : octalToDecimal<KeyType>("1000000000000000000000");
-    auto span_to_key_num_elements = spanSfcRange<KeyType>(0, key);
+    auto span_to_key_num_elements = spanSfcRange<KeyType>(0, key, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
     std::vector<KeyType> span_to_key;
     span_to_key.resize(span_to_key_num_elements);
-    spanSfcRange<KeyType>(0, key, span_to_key.data());
+    spanSfcRange<KeyType>(0, key, span_to_key.data(), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
 
-    auto span_from_key_num_elements = spanSfcRange<KeyType>(key, range_max);
+    auto span_from_key_num_elements = spanSfcRange<KeyType>(key, range_max, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
     std::vector<KeyType> span_from_key;
     span_from_key.resize(span_from_key_num_elements);
-    spanSfcRange<KeyType>(key, range_max, span_from_key.data());
+    spanSfcRange<KeyType>(key, range_max, span_from_key.data(), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
 
     std::vector<KeyType> tree;
     tree.insert(tree.end(), span_to_key.begin(), span_to_key.end());

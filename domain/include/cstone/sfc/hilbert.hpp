@@ -44,7 +44,7 @@ __device__ static unsigned mortonToHilbertDevice[8] = {0, 1, 3, 2, 7, 6, 4, 5};
  */
 template<class KeyType>
 constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbert(unsigned px, unsigned py, unsigned pz, int order = maxTreeLevel<KeyType>{}) noexcept
+iHilbert3D(unsigned px, unsigned py, unsigned pz, int order = maxTreeLevel<KeyType>{}) noexcept
 {
     assert(px < (1u << order));
     assert(py < (1u << order));
@@ -118,7 +118,7 @@ iHilbert2D(unsigned px, unsigned py, int order = maxTreeLevel<KeyType>{}) noexce
  */
 template<class KeyType>
 constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbertMixD(unsigned px, unsigned py, unsigned pz, unsigned bx, unsigned by, unsigned bz) noexcept
+iHilbert(unsigned px, unsigned py, unsigned pz, unsigned bx, unsigned by, unsigned bz) noexcept
 {
     assert(px < (1u << bx));
     assert(py < (1u << by));
@@ -210,7 +210,7 @@ iHilbertMixD(unsigned px, unsigned py, unsigned pz, unsigned bx, unsigned by, un
     assert(sortedCoordinates[1] < (static_cast<KeyType>(1) << bits[2]));
 
     // encode remaining bits[0] == min(bx,by,bz) 3D levels or octal digits with 3D-Hilbert and add to key
-    const KeyType key3D = iHilbert<KeyType>(sortedCoordinates[0], sortedCoordinates[1], sortedCoordinates[2]);
+    const KeyType key3D = iHilbert3D<KeyType>(sortedCoordinates[0], sortedCoordinates[1], sortedCoordinates[2]);
     key |= key3D;
     // Example for (bx,by,bz) = (10,9,7): 1D,2D,2D,3D*7
 
@@ -251,10 +251,10 @@ iHilbert2D(unsigned px, unsigned py, int order) noexcept
     return key;
 }
 
-//! @brief inverse function of iHilbert
+//! @brief inverse function of iHilbert3D
 template<class KeyType>
 HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
-decodeHilbert(KeyType key, unsigned order = maxTreeLevel<KeyType>{}) noexcept
+decodeHilbert3D(KeyType key, unsigned order = maxTreeLevel<KeyType>{}) noexcept
 {
     unsigned px = 0;
     unsigned py = 0;
@@ -332,10 +332,18 @@ decodeHilbert2D(KeyType key, unsigned order = maxTreeLevel<KeyType>{}) noexcept
     return {px, py};
 }
 
-//! @brief inverse function of iHilbertMixD
-template<class KeyType>
-HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
-decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
+//! @brief convenience wrapper for decodeHilbert3D
+ template<class KeyType>
+ HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
+ decodeHilbert(KeyType key) noexcept
+ {
+     return decodeHilbert3D<KeyType>(key);
+ }
+
+ //! @brief inverse function of iHilbert
+ template<class KeyType>
+ HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
+ decodeHilbert(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
 {
     // Sort bits[] descending while tracking permutation[] — 3-element sort network (GPU-friendly)
     unsigned bits[3]   = {bx, by, bz};
@@ -400,7 +408,7 @@ decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
         key &= (static_cast<KeyType>(1) << (3 * bits[2])) - 1;
     }
 
-    const auto pair3D = decodeHilbert<KeyType>(key);
+    const auto pair3D = decodeHilbert3D<KeyType>(key);
     coordinates[0] |= get<0>(pair3D);
     coordinates[1] |= get<1>(pair3D);
     coordinates[2] |= get<2>(pair3D);
@@ -413,7 +421,7 @@ decodeHilbertMixD(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
     return {returnCoordinates[0], returnCoordinates[1], returnCoordinates[2]};
 }
 
-//! @brief inverse function of iHilbert 32 bit only up to oder 16 but works at constant time.
+//! @brief inverse function of iHilbert3D 32 bit only up to oder 16 but works at constant time.
 template<class KeyType>
 HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2DConstant(KeyType key) noexcept
 {
@@ -456,41 +464,16 @@ HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2DConstant(K
     return {px, py};
 }
 
-/*! @brief compute the 3D integer coordinate box that contains the key range
- *
- * @tparam KeyType   32- or 64-bit unsigned integer
- * @param  keyStart  lower Hilbert key
- * @param  keyEnd    upper Hilbert key
- * @return           the integer box that contains the given key range
- */
-template<class KeyType>
-HOST_DEVICE_FUN IBox hilbertIBox(KeyType keyStart, unsigned level) noexcept
-{
-    assert(level <= maxTreeLevel<KeyType>{});
-    constexpr unsigned maxCoord = 1u << maxTreeLevel<KeyType>{};
-    unsigned cubeLength         = maxCoord >> level;
-    unsigned mask               = ~(cubeLength - 1);
-
-    auto [ix, iy, iz] = decodeHilbert(keyStart);
-
-    // round integer coordinates down to corner closest to origin
-    ix &= mask;
-    iy &= mask;
-    iz &= mask;
-
-    return IBox(ix, ix + cubeLength, iy, iy + cubeLength, iz, iz + cubeLength);
-}
-
 //! @brief convenience wrapper
 template<class KeyType>
-HOST_DEVICE_FUN IBox hilbertIBoxKeys(KeyType keyStart, KeyType keyEnd) noexcept
+HOST_DEVICE_FUN IBox hilbertIBoxKeys(KeyType keyStart, KeyType keyEnd, unsigned bx, unsigned by, unsigned bz) noexcept
 {
     assert(keyStart <= keyEnd);
-    return hilbertIBox(keyStart, treeLevel(keyEnd - keyStart));
+    return hilbertIBox(keyStart, treeLevel(keyEnd - keyStart), bx, by, bz);
 }
 
 template<class KeyType>
-HOST_DEVICE_FUN bool isValidHilbertMixDKey(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
+HOST_DEVICE_FUN bool isValidHilbertKey(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
 {
     // Ascending 3-element sort network (GPU-friendly, no std::sort)
     unsigned bits[3] = {bx, by, bz};
@@ -529,6 +512,31 @@ HOST_DEVICE_FUN bool isValidHilbertMixDKey(KeyType key, unsigned bx, unsigned by
     return true;
 }
 
+template<class KeyType>
+HOST_DEVICE_FUN IBox hilbertIBox(KeyType keyStart, unsigned level, unsigned bx, unsigned by, unsigned bz) noexcept
+{
+    assert(level <= maxTreeLevel<KeyType>{});
+    const unsigned level_from_right = maxTreeLevel<KeyType>{} - level;
+    auto isValidKey = isValidHilbertKey(keyStart, bx, by, bz);
+    if (!isValidKey)
+    {
+        return IBox(0, 0, 0, 0, 0, 0); // return empty box
+    }
+    unsigned cubeLengthX = 1u << std::min(bx, level_from_right);
+    unsigned cubeLengthY = 1u << std::min(by, level_from_right);
+    unsigned cubeLengthZ = 1u << std::min(bz, level_from_right);
+    unsigned maskX       = ~(cubeLengthX - 1);
+    unsigned maskY       = ~(cubeLengthY - 1);
+    unsigned maskZ       = ~(cubeLengthZ - 1);
+    auto [ix, iy, iz]    = decodeHilbert<KeyType>(keyStart, bx, by, bz);
+
+    // round integer coordinates down to corner closest to origin
+    ix &= maskX;
+    iy &= maskY;
+    iz &= maskZ;
+    return IBox(ix, ix + cubeLengthX, iy, iy + cubeLengthY, iz, iz + cubeLengthZ);
+}
+
 /*! @brief compute the 3D integer coordinate box that contains the key range
  *
  * @tparam KeyType   32- or 64-bit unsigned integer
@@ -538,27 +546,9 @@ HOST_DEVICE_FUN bool isValidHilbertMixDKey(KeyType key, unsigned bx, unsigned by
  * @return           the integer box that contains the given key range
  */
 template<class KeyType>
-HOST_DEVICE_FUN IBox hilbertMixDIBox(KeyType keyStart, unsigned level, unsigned bx, unsigned by, unsigned bz) noexcept
+HOST_DEVICE_FUN IBox hilbertIBox(KeyType keyStart, unsigned level) noexcept
 {
-    assert(level <= maxTreeLevel<KeyType>{});
-    auto isValidKey = isValidHilbertMixDKey(keyStart, bx, by, bz);
-    if (!isValidKey)
-    {
-        return IBox(0, 0, 0, 0, 0, 0); // return empty box
-    }
-    unsigned cubeLengthX = 1u << std::min(bx, level);
-    unsigned cubeLengthY = 1u << std::min(by, level);
-    unsigned cubeLengthZ = 1u << std::min(bz, level);
-    unsigned maskX       = ~(cubeLengthX - 1);
-    unsigned maskY       = ~(cubeLengthY - 1);
-    unsigned maskZ       = ~(cubeLengthZ - 1);
-    auto [ix, iy, iz]    = decodeHilbertMixD<KeyType>(keyStart, bx, by, bz);
-
-    // round integer coordinates down to corner closest to origin
-    ix &= maskX;
-    iy &= maskY;
-    iz &= maskZ;
-    return IBox(ix, ix + cubeLengthX, iy, iy + cubeLengthY, iz, iz + cubeLengthZ);
+    return hilbertIBox(keyStart, level, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
 }
 
 } // namespace cstone

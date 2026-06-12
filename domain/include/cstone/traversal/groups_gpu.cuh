@@ -182,8 +182,6 @@ __global__ void groupSplitsKernel(LocalIndex first,
     }
 
     const auto mixDBits = getBoxMixDimensionBits<T, KeyType>(box);
-    const bool useMixD  = (mixDBits.bx != maxTreeLevel<KeyType>{} || mixDBits.by != maxTreeLevel<KeyType>{} ||
-                          mixDBits.bz != maxTreeLevel<KeyType>{});
     Box<T> unitBox(0, 1 / (1 << (maxTreeLevel<KeyType>{} - mixDBits.bx)), 0,
                    1 / (1 << (maxTreeLevel<KeyType>{} - mixDBits.by)), 0,
                    1 / (1 << (maxTreeLevel<KeyType>{} - mixDBits.bz)));
@@ -191,9 +189,8 @@ __global__ void groupSplitsKernel(LocalIndex first,
     for (LocalIndex k = 0; k < nwt; ++k)
     {
         auto nodeIBox =
-            useMixD ? sfcIBox(sfcMixDKey<KeyType>(leaves[leafIdx[0]]), sfcMixDKey<KeyType>(leaves[leafIdx[0] + 1]),
-                              mixDBits.bx, mixDBits.by, mixDBits.bz)
-                    : sfcIBox(sfcKey(leaves[leafIdx[0]]), sfcKey(leaves[leafIdx[0] + 1]));
+            sfcIBox(sfcKey<KeyType>(leaves[leafIdx[0]]), sfcKey<KeyType>(leaves[leafIdx[0] + 1]),
+                    mixDBits.bx, mixDBits.by, mixDBits.bz);
         auto [nodeCenter, nodeSize] = centerAndSize<KeyType>(nodeIBox, unitBox);
         T vol                       = 8 * nodeSize[0] * nodeSize[1] * nodeSize[2];
         nodeVolume                  = vol > 0 ? min(vol, nodeVolume) : nodeVolume;

@@ -58,10 +58,6 @@ void globalRandomGaussian(int thisRank, int numRanks, const Box<T>& box)
     LocalIndex numParticles = 1000;
     unsigned bucketSize     = 64;
 
-    const auto mixDBits = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
-    const bool useMixD  = (mixDBits.bx != maxTreeLevel<KeyType>{} || mixDBits.by != maxTreeLevel<KeyType>{} ||
-                          mixDBits.bz != maxTreeLevel<KeyType>{});
-
     RandomCoordinates<T, sfcKeyType<KeyType>> coords{numParticles, box, static_cast<std::size_t>(thisRank)};
 
     std::vector<KeyType> tree = makeRootNodeTree<KeyType>();
@@ -100,12 +96,7 @@ void globalRandomGaussian(int thisRank, int numRanks, const Box<T>& box)
     /// if the global tree build and assignment is repeated, no particles are exchanged anymore
 
     std::vector<KeyType> newCodes(x.size());
-    if (useMixD)
-    {
-        computeSfcMixDKeys(x.data(), y.data(), z.data(), SfcMixDKindPointer(newCodes.data()), x.size(), box,
-                           mixDBits.bx, mixDBits.by, mixDBits.bz);
-    }
-    else { computeSfcKeys(x.data(), y.data(), z.data(), sfcKindPointer(newCodes.data()), x.size(), box); }
+    computeSfcKeys(x.data(), y.data(), z.data(), sfcKindPointer(newCodes.data()), x.size(), box);
 
     // received particles are not stored in SFC order after the exchange
     std::sort(begin(newCodes), end(newCodes));
@@ -144,7 +135,7 @@ TEST(GlobalTreeDomain, randomGaussian)
     globalRandomGaussian<uint64_t, double, SfcKind>(rank, nRanks, {-1, 1});
     globalRandomGaussian<unsigned, float, SfcKind>(rank, nRanks, {-1, 1});
     globalRandomGaussian<uint64_t, float, SfcKind>(rank, nRanks, {-1, 1});
-    globalRandomGaussian<uint64_t, double, SfcMixDKind>(rank, nRanks, {0, 1, 0, 0.015625, 0, 0.00390625});
-    globalRandomGaussian<unsigned, float, SfcMixDKind>(rank, nRanks, {0, 1, 0, 0.015625, 0, 0.00390625});
-    globalRandomGaussian<uint64_t, float, SfcMixDKind>(rank, nRanks, {0, 1, 0, 0.015625, 0, 0.00390625});
+    globalRandomGaussian<uint64_t, double, SfcKind>(rank, nRanks, {0, 1, 0, 0.015625, 0, 0.00390625});
+    globalRandomGaussian<unsigned, float, SfcKind>(rank, nRanks, {0, 1, 0, 0.015625, 0, 0.00390625});
+    globalRandomGaussian<uint64_t, float, SfcKind>(rank, nRanks, {0, 1, 0, 0.015625, 0, 0.00390625});
 }

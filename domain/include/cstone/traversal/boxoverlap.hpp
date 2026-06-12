@@ -109,8 +109,10 @@ containedIn(KeyType codeStart, KeyType codeEnd, const IBox& box)
         return codeStart == 0 && codeEnd == nodeRange<KeyType>(0);
     }
 
-    KeyType lowCode  = iSfcKey<SfcKind<KeyType>>(box.xmin(), box.ymin(), box.zmin());
-    KeyType highCode = iSfcKey<SfcKind<KeyType>>(box.xmax() - 1, box.ymax() - 1, box.zmax() - 1);
+    KeyType lowCode  = iSfcKey<SfcKind<KeyType>>(box.xmin(), box.ymin(), box.zmin(),
+                                                maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
+    KeyType highCode = iSfcKey<SfcKind<KeyType>>(box.xmax() - 1, box.ymax() - 1, box.zmax() - 1,
+                                                 maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
     auto envelope    = smallestCommonBox(lowCode, highCode);
 
     return (util::get<0>(envelope) >= codeStart) && (util::get<1>(envelope) <= codeEnd);
@@ -136,8 +138,8 @@ containedIn(KeyType codeStart, KeyType codeEnd, const IBox& box, unsigned bx, un
         return codeStart == 0 && codeEnd == nodeRange<KeyType>(0);
     }
 
-    KeyType lowCode  = iSfcMixDKey<SfcMixDKind<KeyType>>(box.xmin(), box.ymin(), box.zmin(), bx, by, bz);
-    KeyType highCode = iSfcMixDKey<SfcMixDKind<KeyType>>(box.xmax() - 1, box.ymax() - 1, box.zmax() - 1, bx, by, bz);
+    KeyType lowCode  = iSfcKey<SfcKind<KeyType>>(box.xmin(), box.ymin(), box.zmin(), bx, by, bz);
+    KeyType highCode = iSfcKey<SfcKind<KeyType>>(box.xmax() - 1, box.ymax() - 1, box.zmax() - 1, bx, by, bz);
     auto envelope    = smallestCommonBox(lowCode, highCode);
 
     return (util::get<0>(envelope) >= codeStart) && (util::get<1>(envelope) <= codeEnd);
@@ -161,57 +163,30 @@ containedIn(KeyType codeStart, KeyType codeEnd, const Vec3<Tc>& center, const Ve
     auto dFromMax = max(boxMax - Vec3<Tc>{box.xmax(), box.ymax(), box.zmax()});
     if (dFromMin < Tc(0) || dFromMax > Tc(0))
     {
-        // any box that wraps around a PBC boundary cannot be contained within
-        // any octree node, except the full root node
-        return codeStart == 0 && codeEnd == nodeRange<KeyType>(0);
-    }
-
-    // increase maximum by a grid-unit to ensure we round up
-    constexpr int gridDim = 1u << maxTreeLevel<KeyType>{};
-    boxMax += Vec3<Tc>{box.lx(), box.ly(), box.lz()} * (Tc(1) / gridDim);
-
-    KeyType lowCode  = sfc3D<SfcKind<KeyType>>(boxMin[0], boxMin[1], boxMin[2], box);
-    KeyType highCode = sfc3D<SfcKind<KeyType>>(boxMax[0], boxMax[1], boxMax[2], box);
-    auto envelope    = smallestCommonBox(lowCode, highCode);
-
-    return (util::get<0>(envelope) >= codeStart) && (util::get<1>(envelope) <= codeEnd);
-}
-
-template<class KeyType, class Tc>
-HOST_DEVICE_FUN std::enable_if_t<std::is_unsigned_v<KeyType>, bool> containedIn(KeyType codeStart,
-                                                                                KeyType codeEnd,
-                                                                                const Vec3<Tc>& center,
-                                                                                const Vec3<Tc>& size,
-                                                                                const Box<Tc>& box,
-                                                                                unsigned bx,
-                                                                                unsigned by,
-                                                                                unsigned bz)
-{
-    auto boxMin   = center - size;
-    auto boxMax   = center + size;
-    auto dFromMin = min(boxMin - Vec3<Tc>{box.xmin(), box.ymin(), box.zmin()});
-    auto dFromMax = max(boxMax - Vec3<Tc>{box.xmax(), box.ymax(), box.zmax()});
-
-    if (dFromMin < Tc(0) || dFromMax > Tc(0))
-    {
-        // any box that wraps around a PBC boundary cannot be contained within
-        // any octree node, except the full root node
         return codeStart == 0 && codeEnd == nodeRange<KeyType>(0);
     }
 
     const auto mixDBits = getBoxMixDimensionBits<Tc, KeyType, Box<Tc>>(box);
 
-    // increase maximum by a grid-unit to ensure we round up
     const auto gridUnitX = box.lx() * (Tc(1) / (1u << mixDBits.bx));
     const auto gridUnitY = box.ly() * (Tc(1) / (1u << mixDBits.by));
     const auto gridUnitZ = box.lz() * (Tc(1) / (1u << mixDBits.bz));
     boxMax += Vec3<Tc>{gridUnitX, gridUnitY, gridUnitZ};
 
-    KeyType lowCode  = sfcMixD<SfcMixDKind<KeyType>>(boxMin[0], boxMin[1], boxMin[2], box, bx, by, bz);
-    KeyType highCode = sfcMixD<SfcMixDKind<KeyType>>(boxMax[0], boxMax[1], boxMax[2], box, bx, by, bz);
+    KeyType lowCode  = sfc3D<SfcKind<KeyType>>(boxMin[0], boxMin[1], boxMin[2], box, mixDBits.bx, mixDBits.by, mixDBits.bz);
+    KeyType highCode = sfc3D<SfcKind<KeyType>>(boxMax[0], boxMax[1], boxMax[2], box, mixDBits.bx, mixDBits.by, mixDBits.bz);
     auto envelope    = smallestCommonBox(lowCode, highCode);
 
     return (util::get<0>(envelope) >= codeStart) && (util::get<1>(envelope) <= codeEnd);
+}
+
+/*! @brief convenience overload that accepts per-dimension bit counts explicitly */
+template<class KeyType, class Tc>
+HOST_DEVICE_FUN std::enable_if_t<std::is_unsigned_v<KeyType>, bool>
+containedIn(KeyType codeStart, KeyType codeEnd, const Vec3<Tc>& center, const Vec3<Tc>& size, const Box<Tc>& box,
+            unsigned /*bx*/, unsigned /*by*/, unsigned /*bz*/)
+{
+    return containedIn(codeStart, codeEnd, center, size, box);
 }
 
 /*! @brief determine whether a binary/octree node (prefix, prefixLength) is fully contained in an SFC range
