@@ -34,6 +34,7 @@ int main()
 
     using Real = double;
     Box<Real> box(-1, 1);
+    const auto mixDBits = getBoxMixDimensionBits<Real, KeyType, Box<Real>>(box);
 
     std::mt19937 gen;
     std::uniform_real_distribution<Real> distribution(box.xmin(), box.xmax());
@@ -54,7 +55,7 @@ int main()
 #pragma omp parallel for schedule(static)
         for (size_t i = 0; i < numKeys; ++i)
         {
-            sfcKeys[i] = sfc3D<MortonKey<KeyType>>(x[i], y[i], z[i], box);
+            sfcKeys[i] = sfc3D<MortonKey<KeyType>>(x[i], y[i], z[i], box, mixDBits.bx, mixDBits.by, mixDBits.bz);
         }
         auto cpu_t1            = std::chrono::high_resolution_clock::now();
         double cpu_time_morton = std::chrono::duration<double>(cpu_t1 - cpu_t0).count();
@@ -67,7 +68,7 @@ int main()
 #pragma omp parallel for schedule(static)
         for (size_t i = 0; i < numKeys; ++i)
         {
-            sfcKeys[i] = sfc3D<HilbertKey<KeyType>>(x[i], y[i], z[i], box);
+            sfcKeys[i] = sfc3D<HilbertKey<KeyType>>(x[i], y[i], z[i], box, mixDBits.bx, mixDBits.by, mixDBits.bz);
         }
         auto cpu_t1             = std::chrono::high_resolution_clock::now();
         double cpu_time_hilbert = std::chrono::duration<double>(cpu_t1 - cpu_t0).count();

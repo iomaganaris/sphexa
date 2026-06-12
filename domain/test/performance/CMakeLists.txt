@@ -2,11 +2,11 @@ include(cstone_add_performance_test)
 
 cstone_add_performance_test(octree.cpp octree_perf)
 cstone_add_performance_test(peers.cpp peers_perf)
-cstone_add_performance_test(hilbert.cpp hilbert_perf)
 cstone_add_performance_test(cluster_overhead.cpp cluster_overhead)
 
 # TODO(iomaganaris): reenable once thrust includes are fixed for CPU builds
 if((CMAKE_CUDA_COMPILER OR CMAKE_HIP_COMPILER) AND (SPH_EXA_WITH_CUDA OR SPH_EXA_WITH_HIP))
+    cstone_add_performance_test(hilbert.cpp hilbert_perf)
     # link to cudart to get thrust includes
     target_link_libraries(hilbert_perf PRIVATE CUDA::cudart)
 endif ()
