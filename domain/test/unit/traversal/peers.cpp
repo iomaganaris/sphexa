@@ -170,7 +170,7 @@ TEST(Peers, find)
     findPeers<unsigned>(Box<double>{-1, 1});
     findPeers<uint64_t>(Box<double>{-1, 1});
     findPeers<unsigned>(Box<double>{0, 1, 0, 0.015625, 0, 0.00390625});
-    // findPeers<uint64_t>(Box<double>{0, 1, 0, 0.015625, 0, 0.00390625});
+    findPeers<uint64_t>(Box<double>{0, 1, 0, 0.015625, 0, 0.00390625});
 }
 
 // A few harder tests to catch the FP-round-off asymmetric case
