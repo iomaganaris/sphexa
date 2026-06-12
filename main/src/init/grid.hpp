@@ -267,9 +267,11 @@ void assembleCuboid(KeyType keyStart, KeyType keyEnd, const cstone::Box<T>& glob
 
     // span the assigned SFC range with valid octree cells
     auto                 gridSfcBits = getBoxMixDimensionBits<T, KeyType>(globalBox);
-    int                  numCells    = cstone::spanSfcRange(keyStart, keyEnd, cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{});
+    int                  numCells    = cstone::spanSfcRange(keyStart, keyEnd, cstone::maxTreeLevel<KeyType>{},
+                                                            cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{});
     std::vector<KeyType> cells(numCells + 1);
-    cstone::spanSfcRange(keyStart, keyEnd, cells.data(), cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{});
+    cstone::spanSfcRange(keyStart, keyEnd, cells.data(), cstone::maxTreeLevel<KeyType>{},
+                         cstone::maxTreeLevel<KeyType>{}, cstone::maxTreeLevel<KeyType>{});
     cells.back() = keyEnd;
 
     std::vector<std::tuple<cstone::FBox<T>, int, int, int>> tasks;

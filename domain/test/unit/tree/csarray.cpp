@@ -390,14 +390,15 @@ TEST(CornerstoneOctree, NodeDebug)
     KeyType s0 = 0164640000000000000000lu;
     KeyType s1 = 0164650000000000000000lu;
     Box<T> box(0, 1, BoundaryType::periodic);
-    const auto mixDBits = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
+    const auto mixDBits             = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
     IBox source                     = sfcIBox(sfcKey(s0), sfcKey(s1), mixDBits.bx, mixDBits.by, mixDBits.bz);
     auto [sourceCenter, sourceSize] = centerAndSize<KeyType>(source, box);
     unsigned prefixLength           = 3 * treeLevel(s1 - s0);
     KeyType sourcePrefix            = encodePlaceholderBit(s0, prefixLength);
     auto expCenter                  = sourceCenter;
 
-    std::vector<KeyType> spanningTree(spanSfcRange(a, b, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}) + 1);
+    std::vector<KeyType> spanningTree(
+        spanSfcRange(a, b, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}) + 1);
     spanSfcRange(a, b, spanningTree.data(), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
     spanningTree.back() = b;
 
@@ -405,7 +406,8 @@ TEST(CornerstoneOctree, NodeDebug)
     T domainVol = 0;
     for (size_t i = 0; i < nNodes(spanningTree); ++i)
     {
-        IBox target                     = sfcIBox(sfcKey(spanningTree[i]), sfcKey(spanningTree[i + 1]), mixDBits.bx, mixDBits.by, mixDBits.bz);
+        IBox target =
+            sfcIBox(sfcKey(spanningTree[i]), sfcKey(spanningTree[i + 1]), mixDBits.bx, mixDBits.by, mixDBits.bz);
         auto [targetCenter, targetSize] = centerAndSize<KeyType>(target, box);
 
         auto distVec = minDistance(sourceCenter, sourceSize, targetCenter, targetSize, box);

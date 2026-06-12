@@ -129,11 +129,9 @@ static void findPeers(Box<double> box)
     int numRanks      = 50;
     float invThetaEff = invThetaMinToVec(0.5f);
 
-    const auto mixDBits = getBoxMixDimensionBits<double, KeyType, Box<double>>(box);
-    auto particleKeys =
-        makeRandomGaussianKeys<KeyType>(nParticles, 42, mixDBits.bx, mixDBits.by, mixDBits.bz);
+    const auto mixDBits   = getBoxMixDimensionBits<double, KeyType, Box<double>>(box);
+    auto particleKeys     = makeRandomGaussianKeys<KeyType>(nParticles, 42, mixDBits.bx, mixDBits.by, mixDBits.bz);
     auto [leaves, counts] = computeOctree<KeyType>(particleKeys, bucketSize);
-    std::cout << "particleKeys generated" << std::endl;
 
     OctreeData<KeyType, CpuTag> octree;
     octree.resize(nNodes(leaves));

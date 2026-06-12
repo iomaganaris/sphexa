@@ -45,10 +45,10 @@ std::vector<Integer> makeRandomUniformKeys(size_t numKeys, int seed = 42)
 
 template<class Integer>
 std::vector<Integer> makeRandomGaussianKeys(size_t numKeys,
-                                            int seed     = 42,
-                                            unsigned bx  = maxTreeLevel<Integer>{},
-                                            unsigned by  = maxTreeLevel<Integer>{},
-                                            unsigned bz  = maxTreeLevel<Integer>{})
+                                            int seed    = 42,
+                                            unsigned bx = maxTreeLevel<Integer>{},
+                                            unsigned by = maxTreeLevel<Integer>{},
+                                            unsigned bz = maxTreeLevel<Integer>{})
 {
     std::mt19937 gen(seed);
     std::vector<Integer> ret(numKeys);
@@ -187,7 +187,7 @@ public:
     const std::vector<Integer>& particleKeys() const { return codes_; }
     const Box<T>& box() const { return box_; }
 
-    protected:
+protected:
     void sfcSort()
     {
         std::size_t n = x_.size();

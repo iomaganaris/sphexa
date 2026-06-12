@@ -333,17 +333,16 @@ decodeHilbert2D(KeyType key, unsigned order = maxTreeLevel<KeyType>{}) noexcept
 }
 
 //! @brief convenience wrapper for decodeHilbert3D
- template<class KeyType>
- HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
- decodeHilbert(KeyType key) noexcept
- {
-     return decodeHilbert3D<KeyType>(key);
- }
+template<class KeyType>
+HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned> decodeHilbert(KeyType key) noexcept
+{
+    return decodeHilbert3D<KeyType>(key);
+}
 
- //! @brief inverse function of iHilbert
- template<class KeyType>
- HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
- decodeHilbert(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
+//! @brief inverse function of iHilbert
+template<class KeyType>
+HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
+decodeHilbert(KeyType key, unsigned bx, unsigned by, unsigned bz) noexcept
 {
     // Sort bits[] descending while tracking permutation[] — 3-element sort network (GPU-friendly)
     unsigned bits[3]   = {bx, by, bz};
@@ -517,7 +516,7 @@ HOST_DEVICE_FUN IBox hilbertIBox(KeyType keyStart, unsigned level, unsigned bx, 
 {
     assert(level <= maxTreeLevel<KeyType>{});
     const unsigned level_from_right = maxTreeLevel<KeyType>{} - level;
-    auto isValidKey = isValidHilbertKey(keyStart, bx, by, bz);
+    auto isValidKey                 = isValidHilbertKey(keyStart, bx, by, bz);
     if (!isValidKey)
     {
         return IBox(0, 0, 0, 0, 0, 0); // return empty box

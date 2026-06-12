@@ -409,53 +409,11 @@ HOST_DEVICE_FUN constexpr KeyType increaseKey(KeyType key, int pos, unsigned b0,
     if (digit + 1 <= max) { key += octalPower<KeyType>(pos); }
     else
     {
-        key &= ~(7 << 3 * posFromLeft);
+        key &= ~(static_cast<KeyType>(7) << 3 * posFromLeft);
         key = increaseKey(key, pos - 1, b0, b1, b2);
     }
     return key;
 }
-
-template<class KeyType, class Store>
-HOST_DEVICE_FUN std::enable_if_t<std::is_same_v<Store, std::nullptr_t> || std::is_same_v<Store, KeyType*>, int>
-spanSfcRange3D(KeyType a, KeyType b, [[maybe_unused]] Store output)
-{
-    assert(b >= a);
-    int numValues = 0;
-    // position of first differing octal digit place
-    int ab_first_diff_pos = (countLeadingZeros(a ^ b) + 3 - unusedBits<KeyType>{}) / 3;
-
-    // last non-zero octal digit place position in a and b
-    int a_last_nz_pos = lastNzPlace(a);
-    int b_last_nz_pos = lastNzPlace(b);
-
-    // add SFC codes, increasing power of 8 in each iteration
-    for (int pos = a_last_nz_pos; pos > ab_first_diff_pos; --pos)
-    {
-        int numDigits = (8 - octalDigit(a, pos)) % 8;
-        numValues += numDigits;
-        while (numDigits--)
-        {
-            if constexpr (!std::is_same_v<Store, std::nullptr_t>) { *output++ = a; }
-            a += octalPower<KeyType>(pos);
-        }
-    }
-
-    // add SFC codes, decreasing power of 8 in each iteration
-    for (int pos = ab_first_diff_pos; pos <= b_last_nz_pos; ++pos)
-    {
-        // Note: octalDigit(a, pos) is guaranteed zero for pos > ab_first_diff_pos
-        int numDigits = octalDigit(b, pos) - octalDigit(a, pos);
-        numValues += numDigits;
-        while (numDigits--)
-        {
-            if constexpr (!std::is_same_v<Store, std::nullptr_t>) { *output++ = a; }
-            a += octalPower<KeyType>(pos);
-        }
-    }
-
-    return numValues;
-}
-
 
 /*! @brief generate SFC codes to cover the range [a:b] with a valid cornerstone sub-octree
  *
@@ -483,22 +441,14 @@ template<class KeyType, class Store>
 HOST_DEVICE_FUN std::enable_if_t<std::is_same_v<Store, std::nullptr_t> || std::is_same_v<Store, KeyType*>, int>
 spanSfcRange(KeyType a, KeyType b, [[maybe_unused]] Store output, unsigned bx, unsigned by, unsigned bz)
 {
-    // #ifndef __CUDA_ARCH__
-    // std::cout << "Started spanSfcRange with a = " << a << " and b = " << b << "and bx = " << bx << " by = " << by << " bz = " << bz << std::endl;
-    // #endif
     assert(b > a);
-    const bool useMixD = false; //(bx != maxTreeLevel<KeyType>{} || by != maxTreeLevel<KeyType>{} || bz != maxTreeLevel<KeyType>{});
-    if (!useMixD) { return spanSfcRange3D(a, b, output); }
     unsigned numValues = 0;
     // position of first differing octal digit place
-    unsigned ab_first_diff_pos            = (countLeadingZeros(a ^ b) + 3 - unusedBits<KeyType>{}) / 3;
+    unsigned ab_first_diff_pos       = (countLeadingZeros(a ^ b) + 3 - unusedBits<KeyType>{}) / 3;
     unsigned ab_first_diff_bits_left = maxTreeLevel<KeyType>{} - ab_first_diff_pos + 1;
     std::array<unsigned, 3> mixd_bits{std::min(bx, ab_first_diff_bits_left), std::min(by, ab_first_diff_bits_left),
                                       std::min(bz, ab_first_diff_bits_left)};
     std::sort(mixd_bits.begin(), mixd_bits.end(), std::greater<unsigned>{});
-    // #ifndef __CUDA_ARCH__
-    // std::cout << "ab_first_diff_pos = " << ab_first_diff_pos << " and mixd_bits = " << mixd_bits[0] << " " << mixd_bits[1] << " " << mixd_bits[2] << std::endl;
-    // #endif
 
     // last non-zero octal digit place position in a and b
     unsigned a_last_nz_pos = lastNzPlace(a);
@@ -540,9 +490,7 @@ spanSfcRange(KeyType a, KeyType b, [[maybe_unused]] Store output, unsigned bx, u
             a = increaseKey(a, pos, mixd_bits[0], mixd_bits[1], mixd_bits[2]);
         }
     }
-    // #ifndef __CUDA_ARCH__
-    // std::cout << "Finished spanSfcRange with a = " << a << " and b = " << b << "and bx = " << bx << " by = " << by << " bz = " << bz << std::endl;
-    // #endif
+
     return numValues;
 }
 
@@ -558,7 +506,8 @@ HOST_DEVICE_FUN int spanSfcRange(KeyType a, KeyType b, unsigned bx, unsigned by,
 template<class KeyType>
 HOST_DEVICE_FUN int spanSfcRange(KeyType a, KeyType b)
 {
-    return spanSfcRange<KeyType, std::nullptr_t>(a, b, nullptr, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
+    return spanSfcRange<KeyType, std::nullptr_t>(a, b, nullptr, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{},
+                                                 maxTreeLevel<KeyType>{});
 }
 
 //! @brief convenience overload for uniform boxes with maxTreeLevel per dimension

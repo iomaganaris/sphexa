@@ -126,7 +126,12 @@ struct IsHilbert : std::bool_constant<std::is_same_v<KeyType, HilbertKey<typenam
 
 //! @brief Key encode overload for Morton keys
 template<class KeyType>
-HOST_DEVICE_FUN inline std::enable_if_t<IsMorton<KeyType>{}, KeyType> iSfcKey(unsigned ix, unsigned iy, unsigned iz, [[maybe_unused]] unsigned bx, [[maybe_unused]] unsigned by, [[maybe_unused]] unsigned bz)
+HOST_DEVICE_FUN inline std::enable_if_t<IsMorton<KeyType>{}, KeyType> iSfcKey(unsigned ix,
+                                                                              unsigned iy,
+                                                                              unsigned iz,
+                                                                              [[maybe_unused]] unsigned bx,
+                                                                              [[maybe_unused]] unsigned by,
+                                                                              [[maybe_unused]] unsigned bz)
 {
     return KeyType{iMorton<typename KeyType::ValueType>(ix, iy, iz)};
 }
@@ -188,7 +193,7 @@ HOST_DEVICE_FUN inline KeyType sfc3D(T x, T y, T z, const Box<T>& box, unsigned 
     const unsigned cubeLength_z = (1u << bz);
 
     return sfc3D<KeyType>(x, y, z, box.xmin(), box.ymin(), box.zmin(), cubeLength_x * box.ilx(),
-                            cubeLength_y * box.ily(), cubeLength_z * box.ilz(), bx, by, bz);
+                          cubeLength_y * box.ily(), cubeLength_z * box.ilz(), bx, by, bz);
 }
 
 //! @brief decode a Morton key
@@ -241,8 +246,10 @@ template<class KeyType, class T>
 HOST_DEVICE_FUN inline KeyType commonNodePrefix(Vec3<T> center, Vec3<T> size, const cstone::Box<T>& box)
 {
     const auto mixDBits = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
-    KeyType lowerKey = cstone::sfc3D<KeyType>(center[0] - size[0], center[1] - size[1], center[2] - size[2], box, mixDBits.bx, mixDBits.by, mixDBits.bz);
-    KeyType upperKey = cstone::sfc3D<KeyType>(center[0] + size[0], center[1] + size[1], center[2] + size[2], box, mixDBits.bx, mixDBits.by, mixDBits.bz);
+    KeyType lowerKey    = cstone::sfc3D<KeyType>(center[0] - size[0], center[1] - size[1], center[2] - size[2], box,
+                                                 mixDBits.bx, mixDBits.by, mixDBits.bz);
+    KeyType upperKey    = cstone::sfc3D<KeyType>(center[0] + size[0], center[1] + size[1], center[2] + size[2], box,
+                                                 mixDBits.bx, mixDBits.by, mixDBits.bz);
 
     unsigned level  = commonPrefix(lowerKey, upperKey) / 3;
     KeyType nodeKey = enclosingBoxCode(lowerKey, level);
@@ -272,7 +279,10 @@ HOST_DEVICE_FUN inline KeyType sfcNeighbor(const IBox& ibox, unsigned level, int
     int z = pbcAdjust<pbcRange>(ibox.zmin() + dz * shiftValue);
 
     KeyType key;
-    if constexpr (IsMorton<KeyType>{}) { key = iSfcKey<KeyType>(x, y, z, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}); }
+    if constexpr (IsMorton<KeyType>{})
+    {
+        key = iSfcKey<KeyType>(x, y, z, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
+    }
     else { key = iSfcKey<KeyType>(x, y, z, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}); }
 
     return KeyType(enclosingBoxCode(key, level));
@@ -293,12 +303,7 @@ HOST_DEVICE_FUN inline KeyType sfcNeighbor(const IBox& ibox, unsigned level, int
  * @param[in]  bz         number of bits to encode in z dimension
  */
 template<class T, class KeyType>
- void computeSfcKeys(const T* x,
-                        const T* y,
-                        const T* z,
-                        KeyType* particleKeys,
-                        size_t n,
-                        const Box<T>& box)
+void computeSfcKeys(const T* x, const T* y, const T* z, KeyType* particleKeys, size_t n, const Box<T>& box)
 {
     const auto mixDBits = getBoxMixDimensionBits<T, KeyType, Box<T>>(box);
 
