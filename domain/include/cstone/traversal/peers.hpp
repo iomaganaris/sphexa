@@ -99,9 +99,9 @@ std::vector<int> findPeersMac(int myRank,
         if (peerRanks[peerRank] == 0) { peerRanks[peerRank] = 1; }
     };
 
-    std::vector<KeyType> spanningNodeKeys(spanSfcRange(domainStart, domainEnd, mixDBits.bx, mixDBits.by, mixDBits.bz) +
+    std::vector<KeyType> spanningNodeKeys(spanSfcRange(domainStart, domainEnd) +
                                           1);
-    spanSfcRange(domainStart, domainEnd, spanningNodeKeys.data(), mixDBits.bx, mixDBits.by, mixDBits.bz);
+    spanSfcRange(domainStart, domainEnd, spanningNodeKeys.data());
     spanningNodeKeys.back() = domainEnd;
 
 #pragma omp parallel for schedule(dynamic)

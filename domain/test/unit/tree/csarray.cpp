@@ -398,8 +398,8 @@ TEST(CornerstoneOctree, NodeDebug)
     auto expCenter                  = sourceCenter;
 
     std::vector<KeyType> spanningTree(
-        spanSfcRange(a, b, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}) + 1);
-    spanSfcRange(a, b, spanningTree.data(), maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{}, maxTreeLevel<KeyType>{});
+        spanSfcRange(a, b) + 1);
+    spanSfcRange(a, b, spanningTree.data());
     spanningTree.back() = b;
 
     std::vector<T> distances;

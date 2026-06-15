@@ -4,15 +4,17 @@
 
 using namespace cstone;
 
-TEST(MixedHilbert, increaseKey)
-{
-    unsigned a{};
-    EXPECT_EQ(increaseKey(a, 10, 1, 1, 1), 1u);
-    unsigned b{760};                               // 1370 octal
-    EXPECT_EQ(increaseKey(b, 10, 8, 4, 2), 761u);  // 1371 octal
-    unsigned c{767};                               // 1377 octal
-    EXPECT_EQ(increaseKey(c, 10, 8, 4, 2), 1024u); // 2000 octal
-}
+// TEST(MixedHilbert, increaseKey)
+// {
+//     unsigned a{};
+//     EXPECT_EQ(increaseKey(a, 9, 10, 10, 10), 1u);
+//     unsigned b{760};                               // 1370 octal
+//     EXPECT_EQ(increaseKey(b, 9, 10, 4, 2), 761u);  // 1371 octal
+//     unsigned c{767};                               // 1377 octal
+//     EXPECT_EQ(increaseKey(c, 9, 10, 4, 2), 1024u); // 2000 octal
+//     unsigned long  d{8070450532247928832}; // 70000000000000000 octal
+//     EXPECT_EQ(increaseKey(d, 0, 21, 21, 21), 9223372036854775808llu); // 1000000000000000000000 octal
+// }
 
 TEST(MixedHilbertBox, x10y9z9)
 {
