@@ -19,6 +19,8 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 
 #include "cstone/cuda/annotation.hpp"
 #include "cstone/primitives/stl.hpp"
@@ -108,6 +110,12 @@ public:
         , boundaries{b, b, b}
         , axesBits_{computeBoxDimBits()}
     {
+// #ifndef __CUDA_ARCH__
+//         std::cout << "Domain: [" << limits[0] << ", " << limits[1] << "] x [" << limits[2] << ", " << limits[3]
+//                   << "] x [" << limits[4] << ", " << limits[5] << "]" << std::endl;
+//         const auto axesBits = getBoxDimBits(maxTreeLevel<uint64_t>{});
+//         std::cout << "MixD SFC bits: " << axesBits[0] << " " << axesBits[1] << " " << axesBits[2] << std::endl;
+// #endif
     }
 
     HOST_DEVICE_FUN constexpr Box(T xmin,
@@ -125,6 +133,12 @@ public:
         , boundaries{bx, by, bz}
         , axesBits_{computeBoxDimBits()}
     {
+// #ifndef __CUDA_ARCH__
+//         std::cout << "Domain: [" << limits[0] << ", " << limits[1] << "] x [" << limits[2] << ", " << limits[3]
+//                   << "] x [" << limits[4] << ", " << limits[5] << "]" << std::endl;
+//         const auto axesBits = getBoxDimBits(maxTreeLevel<uint64_t>{});
+//         std::cout << "MixD SFC bits: " << axesBits[0] << " " << axesBits[1] << " " << axesBits[2] << std::endl;
+// #endif
     }
 
     HOST_DEVICE_FUN constexpr T xmin() const { return limits[0]; }
@@ -174,8 +188,28 @@ public:
         ar->stepAttribute("box", limits, 6);
         ar->stepAttribute("boundaryType", reinterpret_cast<std::underlying_type_t<BoundaryType>*>(boundaries), 3);
 
+        // allow overriding the loaded boundary type via SPHEXA_BOUNDARY_TYPE, e.g. "1" for periodic on all axes
+        if (const char* envBoundaryType = std::getenv("SPHEXA_BOUNDARY_TYPE"))
+        {
+            applyEnvBoundaryType(envBoundaryType);
+        }
+
         *this = Box<T>(limits[0], limits[1], limits[2], limits[3], limits[4], limits[5], boundaries[0], boundaries[1],
                        boundaries[2]);
+    }
+
+    //! @brief override the boundary type on all axes with the value from SPHEXA_BOUNDARY_TYPE
+    void applyEnvBoundaryType(const char* envBoundaryType)
+    {
+        int value = std::atoi(envBoundaryType);
+        if (value < 0 || value > static_cast<int>(BoundaryType::cubic_open))
+        {
+            std::cerr << "SPHEXA_BOUNDARY_TYPE out of range: " << envBoundaryType << std::endl;
+            std::abort();
+        }
+
+        auto b         = static_cast<BoundaryType>(value);
+        boundaries[0] = boundaries[1] = boundaries[2] = b;
     }
 
 private:

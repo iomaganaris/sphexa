@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <cstdlib>
 #include <limits>
 #include <iostream>
 
@@ -94,7 +95,30 @@ struct StarData
         optionalIO("star::cooling_rho_limit", &cooling_rho_limit, 1);
         optionalIO("star::u_floor", &u_floor, 1);
         optionalIO("star::K_u", &K_u, 1);
+
+        // allow overriding the loaded removal_limit_h via SPHEXA_REMOVAL_LIMIT_H, e.g. "0.6"
+        if (const char* envRemovalLimitH = std::getenv("SPHEXA_REMOVAL_LIMIT_H"))
+        {
+            applyEnvRemovalLimitH(envRemovalLimitH, ar->rank());
+        }
     };
+
+    //! @brief override removal_limit_h with the value from SPHEXA_REMOVAL_LIMIT_H
+    void applyEnvRemovalLimitH(const char* envRemovalLimitH, int rank)
+    {
+        char*  end   = nullptr;
+        double value = std::strtod(envRemovalLimitH, &end);
+        if (end == envRemovalLimitH || *end != '\0' || !(value > 0.0))
+        {
+            if (rank == 0)
+            {
+                std::cerr << "SPHEXA_REMOVAL_LIMIT_H invalid (must be a positive number): " << envRemovalLimitH
+                          << std::endl;
+            }
+            std::abort();
+        }
+        removal_limit_h = value;
+    }
 
     //! @brief Potential from interaction between star and particles
     double potential{};
