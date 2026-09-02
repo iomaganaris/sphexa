@@ -147,6 +147,8 @@ public:
         using KeyType = typename Dataset::KeyType;
         using T       = typename Dataset::RealType;
 
+        reader->setStep(h5_fname, -1, FileMode::collective);
+
         size_t numParticlesInFile = reader->localNumParticles();
         size_t numParticlesSplit  = numParticlesInFile * numSplits;
 
