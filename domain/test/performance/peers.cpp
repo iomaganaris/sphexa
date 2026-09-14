@@ -37,7 +37,7 @@ int main()
     octree.resize(nNodes(treeLeaves));
     updateInternalTree<KeyType>(treeLeaves, octree.data());
 
-    auto assignment = makeSfcAssignment(numRanks, counts, treeLeaves.data());
+    auto assignment = makeSfcAssignment(numRanks, counts, treeLeaves.data(), box);
     int probeRank   = numRanks / 2;
 
     auto tp0                  = std::chrono::high_resolution_clock::now();

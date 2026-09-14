@@ -77,7 +77,8 @@ TEST(DomainDecomposition, makeSfcAssignment)
     std::vector<KeyType> csarray{0, 10, 20, 30, 40};
     std::vector<unsigned> counts{5, 5, 5, 5};
 
-    auto a = makeSfcAssignment(2, counts, csarray.data());
+    Box<double> box{0, 1};
+    auto        a = makeSfcAssignment(2, counts, csarray.data(), box);
     EXPECT_EQ(a[0], 0);
     EXPECT_EQ(a[1], 20);
     EXPECT_EQ(a[2], 40);

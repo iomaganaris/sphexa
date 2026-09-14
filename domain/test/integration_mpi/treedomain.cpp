@@ -69,7 +69,7 @@ void globalRandomGaussian(int thisRank, int numRanks, const Box<T>& box)
     // particles are in SFC order
     std::iota(begin(ordering), end(ordering), 0);
 
-    auto assignment = makeSfcAssignment(numRanks, counts, tree.data());
+    auto assignment = makeSfcAssignment(numRanks, counts, tree.data(), box);
     auto sends      = createSendRanges<KeyType>(assignment, coords.particleKeys());
 
     EXPECT_EQ(std::accumulate(begin(counts), end(counts), std::size_t(0)), numParticles * numRanks);

@@ -117,7 +117,7 @@ static void findPeers()
     auto octreeView   = octree.cdata();
     octreeView.leaves = leaves.data();
 
-    auto assignment = makeSfcAssignment(numRanks, counts, leaves.data());
+    auto assignment = makeSfcAssignment(numRanks, counts, leaves.data(), box);
 
     int probeRank             = numRanks / 2;
     std::vector<int> peersDtt = findPeersMac(probeRank, assignment, octreeView, box, invThetaEff);

@@ -131,7 +131,7 @@ public:
             syncGpu(exec_);
         }
 
-        assignment_ = makeSfcAssignment(numRanks_, nodeCounts_, leaves_.data());
+        assignment_ = makeSfcAssignment(numRanks_, nodeCounts_, leaves_.data(), box_);
 
         if constexpr (gpu)
         {

@@ -81,7 +81,7 @@ std::tuple<KeyType, KeyType> estimateEvrardSfcPartition(size_t cbrtNumPart, cons
     };
 
     auto [tree, counts] = cstone::computeContinuumCsarray<KeyType>(oneOverR, box, bucketSize);
-    auto a              = cstone::makeSfcAssignment(numRanks, counts, tree.data());
+    auto a              = cstone::makeSfcAssignment(numRanks, counts, tree.data(), box);
 
     return {a[rank], a[rank + 1]};
 }

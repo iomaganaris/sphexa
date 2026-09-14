@@ -60,7 +60,7 @@ static void generalExchangeRandomGaussian(int thisRank, int numRanks, const Box<
     auto domainTree   = domainTree_.cdata();
     domainTree.leaves = tree.data();
 
-    auto assignment = makeSfcAssignment(numRanks, counts, tree.data());
+    auto assignment = makeSfcAssignment(numRanks, counts, tree.data(), box);
 
     // *******************************
 
@@ -177,7 +177,7 @@ static void generalExchangeSourceCenter(int thisRank, int numRanks, const Box<T>
     auto domainTree   = domainTree_.cdata();
     domainTree.leaves = tree.data();
 
-    auto assignment = makeSfcAssignment(numRanks, counts, tree.data());
+    auto assignment = makeSfcAssignment(numRanks, counts, tree.data(), box);
 
     /*******************************/
 

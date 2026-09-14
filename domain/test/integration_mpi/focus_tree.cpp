@@ -58,7 +58,7 @@ void globalRandomGaussian(int thisRank, int numRanks)
     domainTree.resize(nNodes(leaves));
     updateInternalTree<KeyType>(leaves, domainTree.data());
 
-    auto assignment = makeSfcAssignment(numRanks, counts, leaves.data());
+    auto assignment = makeSfcAssignment(numRanks, counts, leaves.data(), box);
 
     /*******************************/
 

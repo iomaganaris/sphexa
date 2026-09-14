@@ -18,12 +18,16 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
+#include <cstdlib>
+#include <iostream>
 #include <numeric>
 #include <span>
 #include <vector>
 
 #include "cstone/tree/csarray.hpp"
 #include "cstone/primitives/gather.hpp"
+#include "cstone/sfc/box.hpp"
 #include "index_ranges.hpp"
 
 namespace cstone
@@ -52,6 +56,95 @@ void uniformBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
         binCounts[i - 1] = countScan[bins[i]] - countScan[bins[i - 1]];
     }
     binCounts.back() = countScan.back() - countScan[bins[numBins - 1]];
+}
+
+/*! @brief group leaves into bins by X/Y-plane column, for boxes with fewer octree levels in Z than X/Y
+ *
+ * @tparam     KeyType    32- or 64-bit unsigned integer SFC key type
+ * @tparam     IndexType  integer type of per-leaf particle counts
+ * @param[in]  counts     particle counts per leaf of @p tree, size N
+ * @param[out] bins       tree-node index of the start of each rank's range, size numRanks + 1
+ * @param[out] binCounts  particle count assigned to each rank, size numRanks
+ * @param[in]  tree       leaf keys of the global cornerstone octree, sorted ascending, size N + 1
+ * @param[in]  axesBits   per-axis SFC bit depth {bx, by, bz}, e.g. from Box::getBoxDimBits
+ *
+ * numColumns = 4^xyDiffWithZ columns tile the X/Y plane, where xyDiffWithZ is the number of octree levels
+ * where X and Y still refine but Z has run out of bits (box thin in Z). Like uniformBins, rank boundaries
+ * target equal particle counts, but each boundary is snapped to the nearest column boundary, so a column
+ * is never split across ranks and each rank gets at least one column when numColumns >= numRanks. Balance is
+ * therefore limited by the heaviest column. Currently assumes
+ * axesBits[0] == axesBits[1] (square X/Y footprint), where the 2D levels sit at the top of the key.
+ * Falls back to uniformBins when the box isn't thin in Z (xyDiffWithZ == 0).
+ */
+template<class KeyType, class IndexType>
+void spacialBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> bins, std::span<LocalIndex> binCounts,
+                  const KeyType* tree, AxesBits axesBits)
+{
+    unsigned minXY       = std::min(axesBits[0], axesBits[1]);
+    unsigned xyDiffWithZ = minXY > axesBits[2] ? minXY - axesBits[2] : 0;
+    if (xyDiffWithZ == 0)
+    {
+        // std::cout << "Box is not thin in Z, falling back to uniformBins" << std::endl;
+        uniformBins(counts, bins, binCounts);
+        return;
+    }
+
+    assert(axesBits[0] == axesBits[1]);
+    unsigned numColumns = 1u << (2u * xyDiffWithZ);
+
+    int numRanks = int(bins.size()) - 1;
+    // std::cout << "Assigning particles to " << numRanks << " ranks with balanced counts, snapped to " << numColumns
+    //           << " X/Y-plane columns of the SFC" << std::endl;
+
+    // each 2D level stores its 2-bit quadrant in a full 3-bit octal digit of the MixD Hilbert key
+    unsigned columnShift = 3u * (maxTreeLevel<KeyType>{} - xyDiffWithZ);
+    TreeNodeIndex numLeaves = TreeNodeIndex(counts.size());
+
+    std::vector<uint64_t> countScan(counts.size() + 1, 0);
+    std::inclusive_scan(counts.begin(), counts.end(), countScan.begin() + 1, std::plus<>{}, uint64_t(0));
+
+    std::vector<TreeNodeIndex> columnStart(numColumns + 1);
+    std::vector<uint64_t> columnScan(numColumns + 1);
+    for (unsigned column = 0; column < numColumns; ++column)
+    {
+        KeyType columnKey = 0;
+        for (unsigned level = 0; level < xyDiffWithZ; ++level)
+        {
+            columnKey |= KeyType((column >> (2u * level)) & 3u) << (3u * level);
+        }
+        columnKey <<= columnShift;
+        columnStart[column] = TreeNodeIndex(std::lower_bound(tree, tree + numLeaves + 1, columnKey) - tree);
+    }
+    columnStart[0]          = 0;
+    columnStart[numColumns] = numLeaves;
+    for (unsigned column = 0; column <= numColumns; ++column)
+    {
+        columnScan[column] = countScan[columnStart[column]];
+    }
+
+    double rankCount = double(countScan.back()) / numRanks;
+    bins.front()     = 0;
+    bins.back()      = numLeaves;
+    unsigned prevColumn = 0;
+    for (int r = 1; r < numRanks; ++r)
+    {
+        uint64_t target = uint64_t(r * rankCount);
+        unsigned column = std::lower_bound(columnScan.begin(), columnScan.end(), target) - columnScan.begin();
+        if (column > 0 && target - columnScan[column - 1] < columnScan[column] - target) { --column; }
+        // every rank keeps at least one column, as long as there are enough columns
+        if (int(numColumns) >= numRanks)
+        {
+            column = std::clamp(column, prevColumn + 1, numColumns - unsigned(numRanks - r));
+        }
+        else { column = std::max(column, prevColumn); }
+        prevColumn = column;
+        bins[r]    = columnStart[column];
+    }
+    for (int r = 1; r < numRanks; ++r)
+    {
+        binCounts[r - 1] = countScan[bins[r]] - countScan[bins[r - 1]];
+    }
+    binCounts.back() = countScan.back() - countScan[bins[numRanks - 1]];
 }
 
 //! @brief Stores which parts of the SFC belong to which rank. Each rank has an identical copy
@@ -109,11 +202,18 @@ private:
     std::vector<TreeNodeIndex> treeOffsets_;
 };
 
-template<class KeyType>
-SfcAssignment<KeyType> makeSfcAssignment(int numRanks, const std::vector<unsigned>& counts, const KeyType* tree)
+template<class KeyType, class T>
+SfcAssignment<KeyType> makeSfcAssignment(int numRanks, const std::vector<unsigned>& counts, const KeyType* tree, const Box<T>& box)
 {
     SfcAssignment<KeyType> ret(numRanks);
-    uniformBins(counts, ret.treeOffsets(), ret.counts());
+    const auto axesBits = box.getBoxDimBits(maxTreeLevel<KeyType>{});
+
+    const char* spacialBinsEnv = std::getenv("SPHEXA_SPACIAL_BINS");
+    if (spacialBinsEnv && std::atoi(spacialBinsEnv) == 1)
+    {
+        spacialBins(counts, ret.treeOffsets(), ret.counts(), tree, axesBits);
+    }
+    else { uniformBins(counts, ret.treeOffsets(), ret.counts()); }
     gather(ret.treeOffsetsConst(), tree, ret.data());
 
     std::span numNodesPerRank = ret.numNodesPerRank();
