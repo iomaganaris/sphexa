@@ -229,6 +229,48 @@ TEST(DomainDecomposition, spacialBinsTwoLevels)
     EXPECT_EQ(binCounts, (std::vector<unsigned>{20, 20, 20, 20}));
 }
 
+//! @brief very thin boxes have more X/Y columns than can be enumerated, columns are much finer than the leaves
+TEST(DomainDecomposition, spacialBinsManyColumns)
+{
+    {
+        using KeyType = uint64_t;
+        unsigned l    = maxTreeLevel<KeyType>{};
+
+        const KeyType c = KeyType(1) << 60;
+        const KeyType s = KeyType(1) << 57;
+        std::vector<KeyType> tree{0, s, c, c + s, 2 * c, 2 * c + s, 3 * c, 3 * c + s, nodeRange<KeyType>(0)};
+        std::vector<unsigned> counts{20, 0, 5, 5, 30, 0, 20, 0};
+
+        // 4^18 columns
+        std::vector<TreeNodeIndex> bins(3);
+        std::vector<unsigned> binCounts(2);
+        spacialBins(counts, bins, binCounts, tree.data(), AxesBits{l, l, 3});
+
+        EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 4, 8}));
+        EXPECT_EQ(binCounts, (std::vector<unsigned>{30, 50}));
+    }
+    {
+        using KeyType = unsigned;
+        unsigned l    = maxTreeLevel<KeyType>{};
+
+        std::vector<KeyType> tree;
+        for (unsigned column = 0; column < 16; ++column)
+        {
+            tree.push_back(((column >> 2) << 27) | ((column & 3) << 24));
+        }
+        tree.push_back(nodeRange<KeyType>(0));
+        std::vector<unsigned> counts(16, 5);
+
+        // 4^10 columns
+        std::vector<TreeNodeIndex> bins(5);
+        std::vector<unsigned> binCounts(4);
+        spacialBins(counts, bins, binCounts, tree.data(), AxesBits{l, l, 0});
+
+        EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 4, 8, 12, 16}));
+        EXPECT_EQ(binCounts, (std::vector<unsigned>{20, 20, 20, 20}));
+    }
+}
+
 //! @brief bins on a cornerstone octree of random particles in a box that is thin in Z
 TEST(DomainDecomposition, spacialBinsRandomThinBox)
 {

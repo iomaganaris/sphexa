@@ -90,55 +90,74 @@ void spacialBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
     }
 
     assert(axesBits[0] == axesBits[1]);
-    unsigned numColumns = 1u << (2u * xyDiffWithZ);
+    // 64-bit to allow up to maxTreeLevel<uint64_t> 2D levels
+    uint64_t numColumns = uint64_t(1) << (2u * xyDiffWithZ);
 
     int numRanks = int(bins.size()) - 1;
     // std::cout << "Assigning particles to " << numRanks << " ranks with balanced counts, snapped to " << numColumns
     //           << " X/Y-plane columns of the SFC" << std::endl;
 
     // each 2D level stores its 2-bit quadrant in a full 3-bit octal digit of the MixD Hilbert key
-    unsigned columnShift = 3u * (maxTreeLevel<KeyType>{} - xyDiffWithZ);
+    unsigned columnShift    = 3u * (maxTreeLevel<KeyType>{} - xyDiffWithZ);
     TreeNodeIndex numLeaves = TreeNodeIndex(counts.size());
 
     std::vector<uint64_t> countScan(counts.size() + 1, 0);
     std::inclusive_scan(counts.begin(), counts.end(), countScan.begin() + 1, std::plus<>{}, uint64_t(0));
 
-    std::vector<TreeNodeIndex> columnStart(numColumns + 1);
-    std::vector<uint64_t> columnScan(numColumns + 1);
-    for (unsigned column = 0; column < numColumns; ++column)
+    // columns are only evaluated at rank boundaries, such that the cost does not depend on numColumns
+
+    // first key of column
+    auto columnKey = [xyDiffWithZ, columnShift](uint64_t column)
     {
-        KeyType columnKey = 0;
+        KeyType key = 0;
         for (unsigned level = 0; level < xyDiffWithZ; ++level)
         {
-            columnKey |= KeyType((column >> (2u * level)) & 3u) << (3u * level);
+            key |= KeyType((column >> (2u * level)) & 3u) << (3u * level);
         }
-        columnKey <<= columnShift;
-        columnStart[column] = TreeNodeIndex(std::lower_bound(tree, tree + numLeaves + 1, columnKey) - tree);
-    }
-    columnStart[0]          = 0;
-    columnStart[numColumns] = numLeaves;
-    for (unsigned column = 0; column <= numColumns; ++column)
+        return KeyType(key << columnShift);
+    };
+    // last column with columnKey(column) <= key, keys in invalid ranges (digit > 3) map to the preceding column
+    auto columnOf = [xyDiffWithZ, columnShift](KeyType key)
     {
-        columnScan[column] = countScan[columnStart[column]];
-    }
+        uint64_t column = 0;
+        for (int level = int(xyDiffWithZ) - 1; level >= 0; --level)
+        {
+            unsigned digit = (key >> (columnShift + 3u * level)) & 7u;
+            if (digit > 3u) { return ((column + 1) << (2u * (level + 1))) - 1; }
+            column = (column << 2u) | digit;
+        }
+        return column;
+    };
+    // index of the first leaf in column, numLeaves for column == numColumns
+    auto columnStart = [tree, numLeaves, numColumns, &columnKey](uint64_t column)
+    {
+        if (column == numColumns) { return numLeaves; }
+        return TreeNodeIndex(std::lower_bound(tree, tree + numLeaves + 1, columnKey(column)) - tree);
+    };
 
-    double rankCount = double(countScan.back()) / numRanks;
-    bins.front()     = 0;
-    bins.back()      = numLeaves;
-    unsigned prevColumn = 0;
+    double rankCount    = double(countScan.back()) / numRanks;
+    bins.front()        = 0;
+    bins.back()         = numLeaves;
+    uint64_t prevColumn = 0;
     for (int r = 1; r < numRanks; ++r)
     {
         uint64_t target = uint64_t(r * rankCount);
-        unsigned column = std::lower_bound(columnScan.begin(), columnScan.end(), target) - columnScan.begin();
-        if (column > 0 && target - columnScan[column - 1] < columnScan[column] - target) { --column; }
-        // every rank keeps at least one column, as long as there are enough columns
-        if (int(numColumns) >= numRanks)
+        // countScan reaches target at this leaf, therefore the first column that reaches target is the first column
+        // starting after the preceding leaf
+        TreeNodeIndex leaf = std::lower_bound(countScan.begin(), countScan.end(), target) - countScan.begin();
+        uint64_t column    = (leaf == 0) ? 0 : columnOf(tree[leaf - 1]) + 1;
+        if (column > 0 && target - countScan[columnStart(column - 1)] < countScan[columnStart(column)] - target)
         {
-            column = std::clamp(column, prevColumn + 1, numColumns - unsigned(numRanks - r));
+            --column;
+        }
+        // every rank keeps at least one column, as long as there are enough columns
+        if (numColumns >= uint64_t(numRanks))
+        {
+            column = std::clamp(column, prevColumn + 1, numColumns - uint64_t(numRanks - r));
         }
         else { column = std::max(column, prevColumn); }
         prevColumn = column;
-        bins[r]    = columnStart[column];
+        bins[r]    = columnStart(column);
     }
     for (int r = 1; r < numRanks; ++r)
     {
