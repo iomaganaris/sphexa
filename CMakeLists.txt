@@ -117,6 +117,10 @@ if (SPH_EXA_WITH_CUDA)
 elseif (SPH_EXA_WITH_HIP)
   set(CSTONE_WITH_HIP ON)
 endif()
+set(CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT 15 CACHE STRING
+    "SPHEXA_SPACIAL_BINS=1: rank boundaries cut through X/Y columns if snapping to a column deviates more than this percentage from the average particle count")
+add_compile_definitions(CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT=${CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT})
+
 add_subdirectory(domain)
 if (SPH_EXA_WITH_CUDA)
   set(RYOANJI_WITH_CUDA ON)

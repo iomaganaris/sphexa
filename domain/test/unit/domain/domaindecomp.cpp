@@ -116,7 +116,8 @@ TEST(DomainDecomposition, spacialBinsSnapToColumn)
 
     int numRanks = 2;
     {
-        // column counts {20, 10, 30, 20}, target 40 is closer to the start of column 2 (30) than column 3 (60)
+        // column counts {20, 10, 30, 20}, target 40 is closer to the start of column 2 (30) than column 3 (60).
+        // 30 is outside the tolerance, but no leaf boundary is closer to 40
         std::vector<unsigned> counts{20, 0, 5, 5, 30, 0, 20, 0};
 
         std::vector<TreeNodeIndex> bins(numRanks + 1);
@@ -138,8 +139,17 @@ TEST(DomainDecomposition, spacialBinsSnapToColumn)
         std::vector<unsigned> binCounts(numRanks);
         spacialBins(counts, bins, binCounts, tree.data(), axesBits);
 
-        EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 4, 8}));
-        EXPECT_EQ(binCounts, (std::vector<unsigned>{50, 30}));
+        if (50 <= uint64_t(40 * (1.0 + CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT / 100.0)))
+        {
+            EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 4, 8}));
+            EXPECT_EQ(binCounts, (std::vector<unsigned>{50, 30}));
+        }
+        else
+        {
+            // 50 deviates from the average of 40 by more than the tolerance, column 1 is cut at the leaf reaching 40
+            EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 3, 8}));
+            EXPECT_EQ(binCounts, (std::vector<unsigned>{40, 40}));
+        }
 
         // uniformBins splits column 1
         uniformBins(counts, bins, binCounts);
@@ -181,7 +191,7 @@ TEST(DomainDecomposition, spacialBinsOneColumnPerRank)
         EXPECT_EQ(binCounts, (std::vector<unsigned>{100, 0, 0}));
     }
     {
-        // more ranks than columns: some ranks are empty, but boundaries stay on column starts and don't decrease
+        // more ranks than columns: boundaries cut through columns, but don't decrease
         int numRanks = 6;
         std::vector<unsigned> counts{10, 10, 10, 10, 10, 10, 10, 10};
 
@@ -192,10 +202,6 @@ TEST(DomainDecomposition, spacialBinsOneColumnPerRank)
         EXPECT_EQ(bins.front(), 0);
         EXPECT_EQ(bins.back(), 8);
         EXPECT_TRUE(std::is_sorted(bins.begin(), bins.end()));
-        for (int r = 0; r <= numRanks; ++r)
-        {
-            EXPECT_EQ(bins[r] % 2, 0);
-        }
         EXPECT_EQ(std::accumulate(binCounts.begin(), binCounts.end(), 0u), 80u);
     }
 }
@@ -227,6 +233,43 @@ TEST(DomainDecomposition, spacialBinsTwoLevels)
 
     EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 4, 8, 12, 16}));
     EXPECT_EQ(binCounts, (std::vector<unsigned>{20, 20, 20, 20}));
+}
+
+//! @brief a column too dense to be snapped to within the tolerance is cut at the leaf closest to the target count
+TEST(DomainDecomposition, spacialBinsCutDenseColumn)
+{
+    if (CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT != 10) { GTEST_SKIP() << "expected counts assume 10 percent"; }
+
+    using KeyType = unsigned;
+    unsigned l    = maxTreeLevel<KeyType>{};
+
+    // column counts {24, 40, 12, 24, 0, ...}, columns 0, 2 and 3 have 2 leaves, column 1 has 8 leaves
+    std::vector<unsigned> leavesPerColumn{2, 8, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    std::vector<unsigned> counts{12, 12, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 12, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+    std::vector<KeyType> tree;
+    for (unsigned column = 0; column < 16; ++column)
+    {
+        KeyType columnKey = ((column >> 2) << 27) | ((column & 3) << 24);
+        for (unsigned i = 0; i < leavesPerColumn[column]; ++i)
+        {
+            tree.push_back(columnKey + (i * 8 / leavesPerColumn[column] << 21));
+        }
+    }
+    tree.push_back(nodeRange<KeyType>(0));
+    ASSERT_TRUE(std::is_sorted(tree.begin(), tree.end()));
+    ASSERT_EQ(tree.size(), counts.size() + 1);
+
+    int numRanks = 4;
+    std::vector<TreeNodeIndex> bins(numRanks + 1);
+    std::vector<unsigned> binCounts(numRanks);
+    spacialBins(counts, bins, binCounts, tree.data(), AxesBits{l, l, l - 2});
+
+    // rank 0: average 25, the end of column 0 gives 24
+    // rank 1: average 76 / 3, the end of column 1 gives 40, cut column 1 after 5 of its leaves instead
+    // rank 2: average 51 / 2, the end of column 2 gives 27
+    EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 2, 7, 12, 26}));
+    EXPECT_EQ(binCounts, (std::vector<unsigned>{24, 25, 27, 24}));
 }
 
 //! @brief very thin boxes have more X/Y columns than can be enumerated, columns are much finer than the leaves
@@ -281,16 +324,6 @@ TEST(DomainDecomposition, spacialBinsRandomThinBox)
     const auto axesBits = box.getBoxDimBits(l);
     ASSERT_EQ(axesBits, (AxesBits{l, l, l - 2}));
 
-    const unsigned numColumns  = 16;
-    const unsigned columnShift = 3 * (l - 2);
-    // index of the column that contains key, leaves in invalid key ranges (digits > 3) belong to the preceding column
-    auto columnOf = [columnShift](KeyType key)
-    {
-        unsigned coarse = (key >> (columnShift + 3)) & 7;
-        unsigned fine   = (key >> columnShift) & 7;
-        return coarse > 3 ? numColumns - 1 : 4 * coarse + std::min(fine, 3u);
-    };
-
     LocalIndex numParticles = 20000;
     RandomCoordinates<double, SfcKind<KeyType>> coords(numParticles, box);
     auto [tree, counts]     = computeOctree<KeyType>(coords.particleKeys(), 64);
@@ -299,12 +332,8 @@ TEST(DomainDecomposition, spacialBinsRandomThinBox)
     std::vector<uint64_t> countScan(counts.size() + 1, 0);
     std::inclusive_scan(counts.begin(), counts.end(), countScan.begin() + 1);
 
-    std::vector<uint64_t> columnCounts(numColumns, 0);
-    for (TreeNodeIndex i = 0; i < numLeaves; ++i)
-    {
-        columnCounts[columnOf(tree[i])] += counts[i];
-    }
-    uint64_t maxColumnCount = *std::max_element(columnCounts.begin(), columnCounts.end());
+    uint64_t maxLeafCount = *std::max_element(counts.begin(), counts.end());
+    double tolerance      = CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT / 100.0;
 
     for (int numRanks : {2, 3, 5, 16})
     {
@@ -318,14 +347,10 @@ TEST(DomainDecomposition, spacialBinsRandomThinBox)
         {
             EXPECT_LT(bins[r - 1], bins[r]);
 
-            // boundary is the first leaf of a column
-            KeyType boundary = tree[bins[r]];
-            EXPECT_EQ(boundary % (KeyType(1) << columnShift), 0);
-            EXPECT_NE(columnOf(boundary), columnOf(tree[bins[r] - 1]));
-
-            // deviation from a perfectly balanced boundary is limited by the heaviest column
-            double target = double(r) * numParticles / numRanks;
-            EXPECT_LE(std::abs(double(countScan[bins[r]]) - target), maxColumnCount);
+            // a rank is either snapped to a column within the tolerance, or cut at the leaf closest to the target
+            double currentAverage = double(numParticles - countScan[bins[r - 1]]) / (numRanks - r + 1);
+            double rankCount      = double(countScan[bins[r]] - countScan[bins[r - 1]]);
+            EXPECT_LE(std::abs(rankCount - currentAverage), std::max(tolerance * currentAverage, double(maxLeafCount)) + 1);
         }
         for (int r = 0; r < numRanks; ++r)
         {

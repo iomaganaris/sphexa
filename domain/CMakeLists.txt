@@ -31,6 +31,12 @@ option(CSTONE_WITH_HIP "Enable building for AMD GPUs" ON)
 option(CSTONE_WITH_GPU_AWARE_MPI "Enable CUDA-aware MPI communication" OFF)
 option(CSTONE_BUILD_PYTHON_BINDINGS "Build Python bindings for selected cstone utilities" OFF)
 
+if(PROJECT_IS_TOP_LEVEL)
+    set(CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT 10 CACHE STRING
+        "spacialBins: rank boundaries cut through X/Y columns if snapping to a column deviates more than this percentage from the average particle count")
+    add_compile_definitions(CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT=${CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT})
+endif()
+
 if(GPU_DIRECT)
     message(WARNING "Option GPU_DIRECT is deprecated and will be removed. Use -DCSTONE_WITH_GPU_AWARE_MPI=ON instead.")
     set(CSTONE_WITH_GPU_AWARE_MPI ON)

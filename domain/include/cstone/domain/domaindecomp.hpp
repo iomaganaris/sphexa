@@ -58,6 +58,14 @@ void uniformBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
     binCounts.back() = countScan.back() - countScan[bins[numBins - 1]];
 }
 
+/*! @brief spacialBins only snaps a rank boundary to an X/Y column boundary if the rank's particle count stays within
+ *         this many percent of the current average, otherwise the dense column is cut at the leaf closest to the
+ *         balanced count. Set at compile time, e.g. with CMake -DCSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT=5
+ */
+#ifndef CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT
+#define CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT 10
+#endif
+
 /*! @brief group leaves into bins by X/Y-plane column, for boxes with fewer octree levels in Z than X/Y
  *
  * @tparam     KeyType    32- or 64-bit unsigned integer SFC key type
@@ -69,10 +77,14 @@ void uniformBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
  * @param[in]  axesBits   per-axis SFC bit depth {bx, by, bz}, e.g. from Box::getBoxDimBits
  *
  * numColumns = 4^xyDiffWithZ columns tile the X/Y plane, where xyDiffWithZ is the number of octree levels
- * where X and Y still refine but Z has run out of bits (box thin in Z). Like uniformBins, rank boundaries
- * target equal particle counts, but each boundary is snapped to the nearest column boundary, so a column
- * is never split across ranks and each rank gets at least one column when numColumns >= numRanks. Balance is
- * therefore limited by the heaviest column. Currently assumes
+ * where X and Y still refine but Z has run out of bits (box thin in Z). Ranks are filled in SFC order, each
+ * targeting the current average, i.e. the particles not yet assigned divided by the ranks not yet filled.
+ * Each boundary is snapped to the nearest column boundary, so a column isn't split across ranks, and each rank
+ * gets at least one column when numColumns >= numRanks. If that puts the rank's particle count further than
+ * CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT from the current average, typically next to a column holding more
+ * particles than the tolerance allows, the boundary is instead placed on the leaf closest to the target count,
+ * cutting through the column (and therefore through Z), unless the column boundary is at least as close.
+ * Currently assumes
  * axesBits[0] == axesBits[1] (square X/Y footprint), where the 2D levels sit at the top of the key.
  * Falls back to uniformBins when the box isn't thin in Z (xyDiffWithZ == 0).
  */
@@ -135,29 +147,47 @@ void spacialBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
         return TreeNodeIndex(std::lower_bound(tree, tree + numLeaves + 1, columnKey(column)) - tree);
     };
 
-    double rankCount    = double(countScan.back()) / numRanks;
-    bins.front()        = 0;
-    bins.back()         = numLeaves;
-    uint64_t prevColumn = 0;
+    const double maxDeviation = CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT / 100.0;
+    bins.front()              = 0;
+    bins.back()               = numLeaves;
     for (int r = 1; r < numRanks; ++r)
     {
-        uint64_t target = uint64_t(r * rankCount);
+        // rank r - 1 starts at leaf bins[r - 1] and ends at the boundary chosen below
+        uint64_t rankStart    = countScan[bins[r - 1]];
+        double currentAverage = double(countScan.back() - rankStart) / (numRanks - r + 1);
+        uint64_t target       = std::min(rankStart + uint64_t(currentAverage), countScan.back());
+        uint64_t minCount     = rankStart + uint64_t((1.0 - maxDeviation) * currentAverage);
+        uint64_t maxCount     = rankStart + uint64_t((1.0 + maxDeviation) * currentAverage);
+
+        auto deviation = [&countScan, target](TreeNodeIndex i)
+        { return countScan[i] > target ? countScan[i] - target : target - countScan[i]; };
+
         // countScan reaches target at this leaf, therefore the first column that reaches target is the first column
         // starting after the preceding leaf
         TreeNodeIndex leaf = std::lower_bound(countScan.begin(), countScan.end(), target) - countScan.begin();
         uint64_t column    = (leaf == 0) ? 0 : columnOf(tree[leaf - 1]) + 1;
-        if (column > 0 && target - countScan[columnStart(column - 1)] < countScan[columnStart(column)] - target)
-        {
-            --column;
-        }
-        // every rank keeps at least one column, as long as there are enough columns
+        if (column > 0 && deviation(columnStart(column - 1)) < deviation(columnStart(column))) { --column; }
+
+        // the boundary must come after the column containing the first leaf of rank r - 1
+        uint64_t firstColumn = (bins[r - 1] == numLeaves) ? numColumns : columnOf(tree[bins[r - 1]]);
         if (numColumns >= uint64_t(numRanks))
         {
-            column = std::clamp(column, prevColumn + 1, numColumns - uint64_t(numRanks - r));
+            // every rank keeps at least one column, as long as there are enough columns
+            column = std::max(std::min(column, numColumns - uint64_t(numRanks - r)), firstColumn + 1);
         }
-        else { column = std::max(column, prevColumn); }
-        prevColumn = column;
-        bins[r]    = columnStart(column);
+        else { column = std::max(column, firstColumn); }
+        TreeNodeIndex boundary = columnStart(std::min(column, numColumns));
+
+        if (countScan[boundary] < minCount || countScan[boundary] > maxCount)
+        {
+            // no column boundary within the tolerance, cut through the column at the leaf closest to target
+            TreeNodeIndex cut = leaf;
+            if (cut > 0 && deviation(cut - 1) < deviation(cut)) { --cut; }
+            cut = std::min(std::max(std::min(cut, numLeaves - (numRanks - r)), bins[r - 1] + 1), numLeaves);
+
+            if (deviation(cut) < deviation(boundary)) { boundary = cut; }
+        }
+        bins[r] = std::max(boundary, bins[r - 1]);
     }
     for (int r = 1; r < numRanks; ++r)
     {
