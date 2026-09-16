@@ -142,8 +142,8 @@ __global__ void makeSplitsKernel(const util::array<GpuConfig::ThreadMask, N>* sp
  * @param[in]  layout          layout[i] is the x,y,z,h-array particle index of the first particle in leaf i,
  * @param[in]  box             global coordinate bounding box
  * @param[in]  tolFactor       max distance between consecutive particles is
- *                             tolFactor * cbrt(smallest leaf node volume in group), with the volume expressed
- *                             as a fraction of the box volume, to match the per-axis normalized coordinates
+ *                             tolFactor * cbrt(smallest leaf node volume in group), with distances and the
+ *                             volume normalized by the geometric mean of the box edges and the box volume
  * @param[out] splitMasks      split mask for each of the ceil((last-first)/groupSize) fixed-size groups
  * @param[out] numSplitsPerGroup 1 + number-of-1-bits in @p splitMasks for each fixed-size group
  */
@@ -200,13 +200,15 @@ __global__ void groupSplitsKernel(LocalIndex first,
     Tc distCrit = std::exp2(-Tc(volExp) / 3) * tolFactor;
 
     // load target coordinates
-    // coordinates are normalized per axis, so the interaction radius is converted into the same units with
-    // the geometric mean of the box edges, matching the scale of distCrit above
+    /* Coordinates and interaction radii are normalized isotropically with the geometric mean of the box edges,
+     * in which units distCrit above is tolFactor times the cubic root of the physical node volume. Normalizing
+     * each axis with its own box length instead would stretch distances along the short axes of MixD boxes by
+     * up to lmax/lmin, while MixD leaf cells are physically cubic, resulting in excessive group splitting. */
     Tc invGeoMean = Tc(1) / std::cbrt(box.lx() * box.ly() * box.lz());
     util::array<Vec4<Tc>, nwt> pos_i;
     for (LocalIndex k = 0; k < nwt; k++)
     {
-        pos_i[k] = {x[bodyIdx[k]] * box.ilx(), y[bodyIdx[k]] * box.ily(), z[bodyIdx[k]] * box.ilz(),
+        pos_i[k] = {x[bodyIdx[k]] * invGeoMean, y[bodyIdx[k]] * invGeoMean, z[bodyIdx[k]] * invGeoMean,
                     h ? Tc(2) * h[bodyIdx[k]] * invGeoMean : Tc(1)};
     }
 

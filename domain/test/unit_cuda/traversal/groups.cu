@@ -217,9 +217,9 @@ TEST(TargetGroups, makeSplits)
  *                  the leaf level and the per-axis SFC bit depths, and the reference value @p tolFactor is
  *                  calibrated against.
  *
- * Particle coordinates and interaction radii are scaled per axis such that the geometry is identical in the
- * per-axis normalized coordinates that the kernel operates in, no matter the aspect ratio of @p box. All
- * reference values below are therefore independent of the box, with the single exception of @p nodeEdge.
+ * The kernel measures distances and interaction radii in units of the geometric mean of the box edges. The
+ * particles are placed along the box diagonal and the thresholds are expressed relative to their physical
+ * spacing, such that all reference values below are independent of the box, except for @p nodeEdge.
  */
 template<class T, class KeyType>
 static void groupVolumesTest(const Box<T>& box, double nodeEdge)
@@ -231,14 +231,13 @@ static void groupVolumesTest(const Box<T>& box, double nodeEdge)
     LocalIndex numParticles = last - first;
     LocalIndex numGroups    = iceil(numParticles, groupSize);
 
-    // scale factors that turn a unit step in x into an equally sized step in normalized coordinates
+    // consecutive particles are placed along the box diagonal, a unit step in x keeps all of them inside the box
     T scaleY = box.ly() / box.lx();
     T scaleZ = box.lz() / box.lx();
-    // interaction radii are normalized with the geometric mean of the box edges, see groupSplitsKernel
-    T geoMean = std::cbrt(box.lx() * box.ly() * box.lz());
-
-    // normalized distance between consecutive particles
-    double spacing = std::sqrt(3.0) / box.lx();
+    // physical distance between consecutive particles
+    T stepLength = std::sqrt(1 + scaleY * scaleY + scaleZ * scaleZ);
+    // distance between consecutive particles in the units of groupSplitsKernel
+    double spacing = stepLength / std::cbrt(box.lx() * box.ly() * box.lz());
 
     auto leaves = OctreeMaker<KeyType>{}.divide().divide(2).makeTree();
     // nodeIdx                   0  1 |2  3  4  5  6   7  8  9 |10  11  12 13 14 15
@@ -254,9 +253,9 @@ static void groupVolumesTest(const Box<T>& box, double nodeEdge)
     thrust::sequence(z.begin(), z.end(), T(0), scaleZ);
     thrust::fill(h.begin(), h.end(), box.maxExtent());
     // particle 6 in 2nd group get a smaller interaction radius, just enough to cause a split
-    h[first + groupSize + 6] = 0.99 * spacing * geoMean / 2;
+    h[first + groupSize + 6] = 0.99 * stepLength / 2;
     // particle 7 in 2nd group's radius is just big enough not to cause a split
-    h[first + groupSize + 7] = 1.01 * spacing * geoMean / 2;
+    h[first + groupSize + 7] = 1.01 * stepLength / 2;
 
     // introduce a split by increasing distance between particles 5 and 6
     x[5] -= 0.01;

@@ -60,9 +60,9 @@ void computeFixedGroups(
  * groups until no distance between consecutive particles is bigger than @p tolFactor times edge length of the smallest
  * leaf cell of any particle in the group. Edge length is computed as the cubic root of the cell volume.
  *
- * Distances are measured in per-axis normalized coordinates, hence the edge length is the cubic root of the cell
- * volume expressed as a fraction of the box volume. For mixed-dimension (MixD) boxes, the cell is not cubic in
- * these coordinates and the edge length is the geometric mean of its per-axis extents, see @a nodeSizeFractions.
+ * Distances and edge lengths are measured in units of the geometric mean of the box edges, cbrt(lx * ly * lz),
+ * which reduces to the box edge length for cubic boxes. For mixed-dimension (MixD) boxes, cells at coarse levels
+ * are not cubic and their edge length is the geometric mean of their extents, see @a nodeSizeFractions.
  */
 template<class Tc, class T, class KeyType>
 extern void computeGroupSplits(execution::Gpu exec,
