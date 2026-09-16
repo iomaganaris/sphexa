@@ -142,7 +142,8 @@ __global__ void makeSplitsKernel(const util::array<GpuConfig::ThreadMask, N>* sp
  * @param[in]  layout          layout[i] is the x,y,z,h-array particle index of the first particle in leaf i,
  * @param[in]  box             global coordinate bounding box
  * @param[in]  tolFactor       max distance between consecutive particles is
- *                             tolFactor * cbrt(smallest leaf node size in group)
+ *                             tolFactor * cbrt(smallest leaf node volume in group), with the volume expressed
+ *                             as a fraction of the box volume, to match the per-axis normalized coordinates
  * @param[out] splitMasks      split mask for each of the ceil((last-first)/groupSize) fixed-size groups
  * @param[out] numSplitsPerGroup 1 + number-of-1-bits in @p splitMasks for each fixed-size group
  */
@@ -183,26 +184,30 @@ __global__ void groupSplitsKernel(LocalIndex first,
     }
 
     const auto axesBits = box.getBoxDimBits(maxTreeLevel<KeyType>{});
-    Box<T> unitBox(0, 1 / (1 << (maxTreeLevel<KeyType>{} - axesBits[0])), 0,
-                   1 / (1 << (maxTreeLevel<KeyType>{} - axesBits[1])), 0,
-                   1 / (1 << (maxTreeLevel<KeyType>{} - axesBits[2])));
-    T nodeVolume = 1;
+
+    /* The volume of a leaf node, as a fraction of the box volume, is 2^-volExp with volExp the sum of the
+     * per-axis exponents. The smallest node in the group therefore has the largest exponent, which is why
+     * the reductions below are maxima, as opposed to the minima taken over the volumes themselves. */
+    unsigned volExp = 0;
     for (LocalIndex k = 0; k < nwt; ++k)
     {
-        auto nodeIBox = sfcIBox(sfcKey<KeyType>(leaves[leafIdx[0]]), sfcKey<KeyType>(leaves[leafIdx[0] + 1]), axesBits);
-        auto [nodeCenter, nodeSize] = centerAndSize<KeyType>(nodeIBox, unitBox);
-        T vol                       = 8 * nodeSize[0] * nodeSize[1] * nodeSize[2];
-        nodeVolume                  = vol > 0 ? min(vol, nodeVolume) : nodeVolume;
+        unsigned level = treeLevel(leaves[leafIdx[k] + 1] - leaves[leafIdx[k]]);
+        auto sizeExp   = nodeSizeExponents<KeyType>(axesBits, level);
+        volExp         = stl::max(volExp, sizeExp[0] + sizeExp[1] + sizeExp[2]);
     }
-    nodeVolume  = warpMin(nodeVolume);
-    Tc distCrit = std::cbrt(nodeVolume) * tolFactor;
+    volExp = warpMax(volExp);
+    // geometric mean of the node edge lengths, as a fraction of the box, i.e. cbrt(2^-volExp)
+    Tc distCrit = std::exp2(-Tc(volExp) / 3) * tolFactor;
 
     // load target coordinates
+    // coordinates are normalized per axis, so the interaction radius is converted into the same units with
+    // the geometric mean of the box edges, matching the scale of distCrit above
+    Tc invGeoMean = Tc(1) / std::cbrt(box.lx() * box.ly() * box.lz());
     util::array<Vec4<Tc>, nwt> pos_i;
     for (LocalIndex k = 0; k < nwt; k++)
     {
         pos_i[k] = {x[bodyIdx[k]] * box.ilx(), y[bodyIdx[k]] * box.ily(), z[bodyIdx[k]] * box.ilz(),
-                    h ? Tc(2) * h[bodyIdx[k]] / box.minExtent() : Tc(1)};
+                    h ? Tc(2) * h[bodyIdx[k]] * invGeoMean : Tc(1)};
     }
 
     auto splitMask = findSplits(pos_i, distCrit * distCrit);

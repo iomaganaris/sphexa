@@ -59,6 +59,10 @@ void computeFixedGroups(
  * This function first creates groups of fixed size @param groupSize. The resulting groups will be split into smaller
  * groups until no distance between consecutive particles is bigger than @p tolFactor times edge length of the smallest
  * leaf cell of any particle in the group. Edge length is computed as the cubic root of the cell volume.
+ *
+ * Distances are measured in per-axis normalized coordinates, hence the edge length is the cubic root of the cell
+ * volume expressed as a fraction of the box volume. For mixed-dimension (MixD) boxes, the cell is not cubic in
+ * these coordinates and the edge length is the geometric mean of its per-axis extents, see @a nodeSizeFractions.
  */
 template<class Tc, class T, class KeyType>
 extern void computeGroupSplits(execution::Gpu exec,
