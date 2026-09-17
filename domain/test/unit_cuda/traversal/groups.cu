@@ -92,7 +92,8 @@ __global__ void findSplitTester(util::array<GpuConfig::ThreadMask, N>* splits)
         pos[lk[1]][2] -= 0.5;
     }
 
-    *splits = findSplits(pos, 3.01);
+    T invDistCrit = 1.0 / std::sqrt(3.01);
+    *splits       = findSplits(pos, Vec3<T>{invDistCrit, invDistCrit, invDistCrit});
 }
 
 TEST(TargetGroups, findSplits)

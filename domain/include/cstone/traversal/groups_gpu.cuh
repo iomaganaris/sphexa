@@ -30,13 +30,16 @@ namespace cstone
  *
  * @tparam    T            float or double
  * @tparam    N            number of particles per thread
- * @param[in] pos          particle input
- * @param[in] distCritSq   maximum allowed distance^2 between two consecutive particles
+ * @param[in] pos          particle input x,y,z and interaction radius
+ * @param[in] invDistCrit  per-axis inverse of the maximum allowed distance between two consecutive particles
  * @return                 a thread mask indicating the lanes between splits with 1-bits
  *                         all lanes return the same result
+ *
+ * A split is introduced if the distance between two consecutive particles, measured in units of @p invDistCrit
+ * per axis, exceeds 1, or if the physical distance exceeds the interaction radius pos[k][3]
  */
 template<class T, size_t N>
-__device__ util::array<GpuConfig::ThreadMask, N> findSplits(util::array<Vec4<T>, N> pos, T distCritSq)
+__device__ util::array<GpuConfig::ThreadMask, N> findSplits(util::array<Vec4<T>, N> pos, Vec3<T> invDistCrit)
 {
     unsigned laneIdx = threadIdx.x & (GpuConfig::warpSize - 1);
 
@@ -69,8 +72,9 @@ __device__ util::array<GpuConfig::ThreadMask, N> findSplits(util::array<Vec4<T>,
     util::array<GpuConfig::ThreadMask, N> splits;
     for (std::size_t k = 0; k < N; ++k)
     {
-        T distSq   = norm2(Xnext[k] - Xlane[k]);
-        bool split = distSq > stl::min(distCritSq, pos[k][3] * pos[k][3]);
+        Vec3<T> dX = Xnext[k] - Xlane[k];
+        Vec3<T> dS = {dX[0] * invDistCrit[0], dX[1] * invDistCrit[1], dX[2] * invDistCrit[2]};
+        bool split = norm2(dS) > T(1) || norm2(dX) > pos[k][3] * pos[k][3];
         splits[k]  = ballotSync(split);
     }
 
@@ -141,8 +145,8 @@ __global__ void makeSplitsKernel(const util::array<GpuConfig::ThreadMask, N>* sp
  * @param[in]  numLeaves       number of leaves in @p leaves
  * @param[in]  layout          layout[i] is the x,y,z,h-array particle index of the first particle in leaf i,
  * @param[in]  box             global coordinate bounding box
- * @param[in]  tolFactor       max distance between consecutive particles is
- *                             tolFactor * cbrt(smallest leaf node size in group)
+ * @param[in]  tolFactor       max distance between consecutive particles is tolFactor * (edge length of the
+ *                             smallest leaf node in the group), evaluated per axis to support anisotropic leaf cells
  * @param[out] splitMasks      split mask for each of the ceil((last-first)/groupSize) fixed-size groups
  * @param[out] numSplitsPerGroup 1 + number-of-1-bits in @p splitMasks for each fixed-size group
  */
@@ -182,30 +186,34 @@ __global__ void groupSplitsKernel(LocalIndex first,
         leafIdx[k] = stl::upper_bound(layout, layout + numLeaves, bodyIdx[k]) - layout - 1;
     }
 
+    // Per-axis smallest leaf edge length in the group. Leaf cells of mixed-dimension boxes are not cubes,
+    // therefore consecutive particle distances are measured relative to the leaf edge along each axis.
     const auto axesBits = box.getBoxDimBits(maxTreeLevel<KeyType>{});
-    Box<T> unitBox(0, 1 / (1 << (maxTreeLevel<KeyType>{} - axesBits[0])), 0,
-                   1 / (1 << (maxTreeLevel<KeyType>{} - axesBits[1])), 0,
-                   1 / (1 << (maxTreeLevel<KeyType>{} - axesBits[2])));
-    T nodeVolume = 1;
+    Vec3<Tc> leafEdge{box.lx(), box.ly(), box.lz()};
     for (LocalIndex k = 0; k < nwt; ++k)
     {
-        auto nodeIBox = sfcIBox(sfcKey<KeyType>(leaves[leafIdx[0]]), sfcKey<KeyType>(leaves[leafIdx[0] + 1]), axesBits);
-        auto [nodeCenter, nodeSize] = centerAndSize<KeyType>(nodeIBox, unitBox);
-        T vol                       = 8 * nodeSize[0] * nodeSize[1] * nodeSize[2];
-        nodeVolume                  = vol > 0 ? min(vol, nodeVolume) : nodeVolume;
+        auto nodeIBox = sfcIBox(sfcKey<KeyType>(leaves[leafIdx[k]]), sfcKey<KeyType>(leaves[leafIdx[k] + 1]), axesBits);
+        auto [nodeCenter, nodeSize] = centerAndSize<KeyType>(nodeIBox, box);
+        for (int j = 0; j < 3; ++j)
+        {
+            leafEdge[j] = stl::min(leafEdge[j], Tc(2) * nodeSize[j]);
+        }
     }
-    nodeVolume  = warpMin(nodeVolume);
-    Tc distCrit = std::cbrt(nodeVolume) * tolFactor;
+    Vec3<Tc> invDistCrit;
+    for (int j = 0; j < 3; ++j)
+    {
+        invDistCrit[j] = Tc(1) / (warpMin(leafEdge[j]) * tolFactor);
+    }
 
     // load target coordinates
     util::array<Vec4<Tc>, nwt> pos_i;
     for (LocalIndex k = 0; k < nwt; k++)
     {
-        pos_i[k] = {x[bodyIdx[k]] * box.ilx(), y[bodyIdx[k]] * box.ily(), z[bodyIdx[k]] * box.ilz(),
-                    h ? Tc(2) * h[bodyIdx[k]] / box.minExtent() : Tc(1)};
+        pos_i[k] = {x[bodyIdx[k]], y[bodyIdx[k]], z[bodyIdx[k]],
+                    h ? Tc(2) * h[bodyIdx[k]] : Tc(2) * box.maxExtent()};
     }
 
-    auto splitMask = findSplits(pos_i, distCrit * distCrit);
+    auto splitMask = findSplits(pos_i, invDistCrit);
 
     if (laneIdx == 0)
     {
