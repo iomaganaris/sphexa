@@ -194,6 +194,12 @@ public:
             applyEnvBoundaryType(envBoundaryType);
         }
 
+        // allow expanding/shrinking the loaded x/y domain via SPHEXA_DISK_BOUND_MULTIPLIER, e.g. "2" to double it
+        if (const char* envDiskBoundMultiplier = std::getenv("SPHEXA_DISK_BOUND_MULTIPLIER"))
+        {
+            applyEnvDiskBoundMultiplier(envDiskBoundMultiplier);
+        }
+
         *this = Box<T>(limits[0], limits[1], limits[2], limits[3], limits[4], limits[5], boundaries[0], boundaries[1],
                        boundaries[2]);
     }
@@ -210,6 +216,28 @@ public:
 
         auto b         = static_cast<BoundaryType>(value);
         boundaries[0] = boundaries[1] = boundaries[2] = b;
+    }
+
+    //! @brief scale the x/y domain about its center by the factor from SPHEXA_DISK_BOUND_MULTIPLIER
+    void applyEnvDiskBoundMultiplier(const char* envDiskBoundMultiplier)
+    {
+        double multiplier = std::atof(envDiskBoundMultiplier);
+        if (multiplier <= 0)
+        {
+            std::cerr << "SPHEXA_DISK_BOUND_MULTIPLIER out of range: " << envDiskBoundMultiplier << std::endl;
+            std::abort();
+        } else if (multiplier == 1)
+        {
+            return;
+        }
+
+        for (int axis = 0; axis < 2; ++axis)
+        {
+            T center     = (limits[2 * axis] + limits[2 * axis + 1]) / T(2);
+            T halfExtent = (limits[2 * axis + 1] - limits[2 * axis]) / T(2) * T(multiplier);
+            limits[2 * axis]     = center - halfExtent;
+            limits[2 * axis + 1] = center + halfExtent;
+        }
     }
 
 private:
