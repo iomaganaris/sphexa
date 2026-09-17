@@ -224,3 +224,59 @@ TEST(SfcBox, getBoxDimBits)
         EXPECT_EQ(axesBits[2], 21);
     }
 }
+
+TEST(SfcBox, nodeSizeExponents)
+{
+    using KeyType               = uint64_t;
+    constexpr unsigned maxLevel = maxTreeLevel<KeyType>{};
+    {
+        // cubic box: all axes are subdivided at every level
+        AxesBits cube{maxLevel, maxLevel, maxLevel};
+        EXPECT_EQ(nodeSizeExponents<KeyType>(cube, 0), (AxesBits{0, 0, 0}));
+        EXPECT_EQ(nodeSizeExponents<KeyType>(cube, 1), (AxesBits{1, 1, 1}));
+        EXPECT_EQ(nodeSizeExponents<KeyType>(cube, maxLevel), (AxesBits{maxLevel, maxLevel, maxLevel}));
+    }
+    {
+        AxesBits bits{21, 19, 17};
+        // level 0: the root node covers the entire box on every axis
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 0), (AxesBits{0, 0, 0}));
+        // levels 1-2, height 20-19: only x is subdivided (1 valid bit)
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 1), (AxesBits{1, 0, 0}));
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 2), (AxesBits{2, 0, 0}));
+        // levels 3-4, height 18-17: x and y are subdivided (2 valid bits)
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 3), (AxesBits{3, 1, 0}));
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 4), (AxesBits{4, 2, 0}));
+        // levels 5 and deeper, height <= 16: all axes are subdivided (3 valid bits)
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 5), (AxesBits{5, 3, 1}));
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 18), (AxesBits{18, 16, 14}));
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, maxLevel), (AxesBits{21, 19, 17}));
+    }
+    {
+        // axesBits are not necessarily sorted, the shortest axis can be any of the three
+        AxesBits bits{21, 20, 21};
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 1), (AxesBits{1, 0, 1}));
+        EXPECT_EQ(nodeSizeExponents<KeyType>(bits, 2), (AxesBits{2, 1, 2}));
+    }
+}
+
+TEST(SfcBox, nodeSizeFractions)
+{
+    using T       = double;
+    using KeyType = uint64_t;
+    {
+        auto frac = nodeSizeFractions<KeyType, T>(AxesBits{21, 19, 17}, 3);
+        EXPECT_DOUBLE_EQ(frac[0], 1.0 / 8);
+        EXPECT_DOUBLE_EQ(frac[1], 1.0 / 2);
+        EXPECT_DOUBLE_EQ(frac[2], 1.0);
+        // node volume as a fraction of the box volume
+        EXPECT_DOUBLE_EQ(frac[0] * frac[1] * frac[2], 1.0 / 16);
+    }
+    {
+        // cubic boxes reduce to the pre-MixD behavior: an edge length of 2^-level on every axis
+        constexpr unsigned maxLevel = maxTreeLevel<KeyType>{};
+        auto frac                   = nodeSizeFractions<KeyType, T>(AxesBits{maxLevel, maxLevel, maxLevel}, 2);
+        EXPECT_DOUBLE_EQ(frac[0], 1.0 / 4);
+        EXPECT_DOUBLE_EQ(frac[1], 1.0 / 4);
+        EXPECT_DOUBLE_EQ(frac[2], 1.0 / 4);
+    }
+}
