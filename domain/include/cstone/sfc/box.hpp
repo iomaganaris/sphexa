@@ -91,6 +91,22 @@ enum class BoundaryType : uint8_t
     cubic_open = 3
 };
 
+/*! @brief bias added to the base-2 logarithm of the aspect ratio when computing MixD bit reductions
+ *
+ * Read once from SPHEXA_MIXD_BIAS: unset or "1" (default) rounds the reduction up once the aspect ratio exceeds
+ * 4/3 of a power of 2 (bias = 1 - log2(1/0.75)), giving cells elongated along the shorter axes. "0" floors the
+ * reduction (bias = 0), so the cell edge along a shorter axis never exceeds the edge along the longest axis.
+ */
+inline double mixDBias()
+{
+    static const double bias = []()
+    {
+        const char* envMixDBias = std::getenv("SPHEXA_MIXD_BIAS");
+        return (envMixDBias && *envMixDBias && std::atoi(envMixDBias) == 0) ? 0.0 : 0.5849625007211563;
+    }();
+    return bias;
+}
+
 /*! @brief stores the coordinate bounds
  *
  * Needs a slightly different behavior in the PBC case than the existing BBox
@@ -247,12 +263,16 @@ private:
      *
      * The longest box dimension gets a reduction of 0 (full key depth),
      * while shorter dimensions receive a positive reduction according to
-     * the base-2 logarithm of the aspect ratio.
+     * the base-2 logarithm of the aspect ratio plus mixDBias(), floored.
+     * Only evaluated on the host, in the constructors.
      */
+#if defined(__CUDACC__)
+    #pragma nv_exec_check_disable
+#endif
     HOST_DEVICE_FUN constexpr AxesBits computeBoxDimBits() const
     {
-        const T maxDim   = maxExtent();
-        constexpr T bias = 0.5849625007211563; // 1 - std::log2(1.0 / 0.75);
+        const T maxDim = maxExtent();
+        const T bias   = T(mixDBias());
 
         return {static_cast<unsigned>(std::floor(std::log2(maxDim / lx()) + bias)),
                 static_cast<unsigned>(std::floor(std::log2(maxDim / ly()) + bias)),

@@ -223,6 +223,14 @@ TEST(SfcBox, getBoxDimBits)
         EXPECT_EQ(axesBits[1], 20);
         EXPECT_EQ(axesBits[2], 21);
     }
+    {
+        // zslab disk box: aspect ratio ~11.4 in z gives a reduction of 4 with the default bias (SPHEXA_MIXD_BIAS unset)
+        Box<T> mixDBox = Box<T>(-44.3247, 48.449, -47.316, 40.1737, -3.72407, 4.43861);
+        auto axesBits  = mixDBox.getBoxDimBits(maxTreeLevel<KeyType>{});
+        EXPECT_EQ(axesBits[0], 21);
+        EXPECT_EQ(axesBits[1], 21);
+        EXPECT_EQ(axesBits[2], 17);
+    }
 }
 
 TEST(SfcBox, nodeSizeExponents)

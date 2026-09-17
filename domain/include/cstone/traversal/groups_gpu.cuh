@@ -30,16 +30,13 @@ namespace cstone
  *
  * @tparam    T            float or double
  * @tparam    N            number of particles per thread
- * @param[in] pos          particle input x,y,z and interaction radius
- * @param[in] invDistCrit  per-axis inverse of the maximum allowed distance between two consecutive particles
+ * @param[in] pos          particle input
+ * @param[in] distCritSq   maximum allowed distance^2 between two consecutive particles
  * @return                 a thread mask indicating the lanes between splits with 1-bits
  *                         all lanes return the same result
- *
- * A split is introduced if the distance between two consecutive particles, measured in units of @p invDistCrit
- * per axis, exceeds 1, or if the physical distance exceeds the interaction radius pos[k][3]
  */
 template<class T, size_t N>
-__device__ util::array<GpuConfig::ThreadMask, N> findSplits(util::array<Vec4<T>, N> pos, Vec3<T> invDistCrit)
+__device__ util::array<GpuConfig::ThreadMask, N> findSplits(util::array<Vec4<T>, N> pos, T distCritSq)
 {
     unsigned laneIdx = threadIdx.x & (GpuConfig::warpSize - 1);
 
@@ -72,9 +69,8 @@ __device__ util::array<GpuConfig::ThreadMask, N> findSplits(util::array<Vec4<T>,
     util::array<GpuConfig::ThreadMask, N> splits;
     for (std::size_t k = 0; k < N; ++k)
     {
-        Vec3<T> dX = Xnext[k] - Xlane[k];
-        Vec3<T> dS = {dX[0] * invDistCrit[0], dX[1] * invDistCrit[1], dX[2] * invDistCrit[2]};
-        bool split = norm2(dS) > T(1) || norm2(dX) > pos[k][3] * pos[k][3];
+        T distSq   = norm2(Xnext[k] - Xlane[k]);
+        bool split = distSq > stl::min(distCritSq, pos[k][3] * pos[k][3]);
         splits[k]  = ballotSync(split);
     }
 
@@ -187,8 +183,6 @@ __global__ void groupSplitsKernel(LocalIndex first,
         leafIdx[k] = stl::upper_bound(layout, layout + numLeaves, bodyIdx[k]) - layout - 1;
     }
 
-    // Per-axis smallest leaf edge length in the group. Leaf cells of mixed-dimension boxes are not cubes,
-    // therefore consecutive particle distances are measured relative to the leaf edge along each axis.
     const auto axesBits = box.getBoxDimBits(maxTreeLevel<KeyType>{});
 
     /* The volume of a leaf node, as a fraction of the box volume, is 2^-volExp with volExp the sum of the
@@ -218,7 +212,7 @@ __global__ void groupSplitsKernel(LocalIndex first,
                     h ? Tc(2) * h[bodyIdx[k]] * invGeoMean : Tc(1)};
     }
 
-    auto splitMask = findSplits(pos_i, invDistCrit);
+    auto splitMask = findSplits(pos_i, distCrit * distCrit);
 
     if (laneIdx == 0)
     {
