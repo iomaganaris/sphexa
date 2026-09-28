@@ -158,6 +158,7 @@ public:
         if (d.g != 0.0)
         {
             auto groups = mHolder_.computeSpatialGroups(d, domain);
+            timer.logStatistics("numGravityGroups", groups.numGroups);
             mHolder_.upsweep(d, domain);
             timer.step("Upsweep");
             mHolder_.traverse(groups, d, domain);
