@@ -13,6 +13,8 @@
  * @author Sebastian Keller <sebastian.f.keller@gmail.com>
  */
 
+#include <cstdlib>
+
 #include "cstone/cuda/cuda_utils.cuh"
 #include "cstone/traversal/groups_gpu.h"
 #include "cstone/util/reallocate.hpp"
@@ -31,17 +33,24 @@ template<class Tc, class Th, class Tm, class Ta, class Tf, class KeyType, class 
 class MultipoleHolder<Tc, Th, Tm, Ta, Tf, KeyType, MType>::Impl
 {
 public:
-    Impl() {}
+    Impl()
+    {
+        // allow overriding the group split tolerance via SPHEXA_GROUP_TOL_FACTOR, e.g. "4" for larger groups
+        if (const char* envTolFactor = std::getenv("SPHEXA_GROUP_TOL_FACTOR"))
+        {
+            float val = std::strtof(envTolFactor, nullptr);
+            if (val > 0) { tolFactor_ = val; }
+        }
+    }
 
     GroupView computeSpatialGroups(LocalIndex first, LocalIndex last, const Tc* x, const Tc* y, const Tc* z,
                                    const Th*                                                         h,
                                    const cstone::FocusedOctree<KeyType, Tf, cstone::execution::Gpu>& focusTree,
                                    const cstone::LocalIndex* layout, const cstone::Box<Tc>& box)
     {
-        auto  d_leaves  = focusTree.treeLeavesAcc();
-        float tolFactor = 2.0f;
+        auto d_leaves = focusTree.treeLeavesAcc();
         cstone::computeGroupSplits(cstone::execution::gpuDefaultStream, first, last, x, y, z, h, d_leaves.data(),
-                                   d_leaves.size() - 1, layout, box, bhMaxTargetSize(), tolFactor, traversalStack_,
+                                   d_leaves.size() - 1, layout, box, bhMaxTargetSize(), tolFactor_, traversalStack_,
                                    groups_.data);
 
         groups_.firstBody  = first;
@@ -138,6 +147,9 @@ private:
 
     //! @brief temporary memory during traversal
     cstone::DeviceVector<LocalIndex> traversalStack_;
+
+    //! @brief max distance between consecutive particles in a target group, in units of the leaf node edge length
+    float tolFactor_{2.0f};
 };
 
 template<class Tc, class Th, class Tm, class Ta, class Tf, class KeyType, class MType>

@@ -76,6 +76,66 @@ bool syncedWallClockElapsed(float totalTimeElapsed, float wallClockLimit, float 
 void printHelp(char* binName, int rank);
 int  getNumLocalRanks(int);
 
+/*! @brief write the halo particles of each rank to a separate file
+ *
+ * Halos are the locally present particles outside the assigned range, i.e. at [0:startIndex] and
+ * [endIndex:nParticlesWithHalos]. Each rank writes its halos as a contiguous segment, tagged with the
+ * owning rank. Fields: x, y, z, h, rank, side (0: halo below startIndex, 1: halo above endIndex).
+ */
+template<class DomainType, class HydroData>
+void writeHaloParticles(IFileWriter* writer, const DomainType& domain, HydroData& d, const std::string& path)
+{
+    size_t start = domain.startIndex();
+    size_t end   = domain.endIndex();
+    size_t size  = domain.nParticlesWithHalos();
+    size_t nHalo = start + (size - end);
+
+    // addStep only creates the (collective) step on ranks with a non-empty range
+    uint64_t minHalo = nHalo;
+    MPI_Allreduce(MPI_IN_PLACE, &minHalo, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
+    if (minHalo == 0)
+    {
+        if (writer->rank() == 0) { std::cout << "WARNING: some ranks have no halos, skipping halo output\n"; }
+        return;
+    }
+
+    auto gatherHalos = [start, end, size, nHalo](const auto& field)
+    {
+        using T = typename std::decay_t<decltype(field)>::value_type;
+        std::vector<T> ret(nHalo);
+#ifdef USE_CUDA
+        cstone::memcpyD2HAsync(exec, field.data(), start, ret.data());
+        cstone::memcpyD2HAsync(exec, field.data() + end, size - end, ret.data() + start);
+        cstone::syncGpu(exec);
+#else
+        std::copy(field.data(), field.data() + start, ret.data());
+        std::copy(field.data() + end, field.data() + size, ret.data() + start);
+#endif
+        return ret;
+    };
+
+    auto hx = gatherHalos(d.x);
+    auto hy = gatherHalos(d.y);
+    auto hz = gatherHalos(d.z);
+    auto hh = gatherHalos(d.h);
+
+    std::vector<int> haloRank(nHalo, writer->rank());
+    std::vector<int> side(nHalo, 0);
+    std::fill(side.begin() + start, side.end(), 1);
+
+    writer->addStep(0, nHalo, path);
+    d.loadOrStoreAttributes(writer);
+    auto box = domain.box();
+    box.loadOrStore(writer);
+    writeField(writer, "x", hx.data(), 0);
+    writeField(writer, "y", hy.data(), 1);
+    writeField(writer, "z", hz.data(), 2);
+    writeField(writer, "h", hh.data(), 3);
+    writeField(writer, "rank", haloRank.data(), 4);
+    writeField(writer, "side", side.data(), 5);
+    writer->closeStep();
+}
+
 int main(int argc, char** argv)
 {
     MPIScope mpi;
@@ -110,6 +170,8 @@ int main(int argc, char** argv)
     const std::string        pmroot               = parser.get("--pmroot", std::string("")); // /sys/cray/pm_counters
     std::string              outFile              = parser.get("-o", "dump_" + removeModifiers(initCond));
     std::string              profFile             = parser.get("-op", std::string("profile"));
+    const bool               writeHalos           = parser.exists("--write-halos");
+    const bool               writeInitial         = parser.exists("--write-initial");
     const bool               disableNeighborLists = parser.exists("--disable-neighbor-lists");
 
     std::ofstream nullOutput("/dev/null");
@@ -136,7 +198,13 @@ int main(int argc, char** argv)
     auto box = simInit->init(rank, numRanks, problemSize, simData, fileReader.get());
 
     auto& d = simData.hydro;
-    simData.setOutputFields(outputFields.empty() ? propagator->conservedFields() : outputFields);
+    // profiling runs only need positions and smoothing lengths, unless fields are requested explicitly with -f
+    if (outputFields.empty())
+    {
+        outputFields = parser.exists("--profile") ? std::vector<std::string>{"x", "y", "z", "h"}
+                                                  : propagator->conservedFields();
+    }
+    simData.setOutputFields(outputFields);
 
     if (disableNeighborLists) d.disableNeighborLists();
 
@@ -145,10 +213,16 @@ int main(int argc, char** argv)
     float theta    = parser.get("--theta", haveGrav ? 0.5f : 1.0f);
 
     if (!parser.exists("-o")) { outFile += fileWriter->suffix(); }
+    const std::string haloFile =
+        (fs::path(outFile).parent_path() / fs::path(outFile).stem()).string() + "_halos" + fileWriter->suffix();
     if (writeEnabled) { writeSettings(simInit->constants(), outFile, fileWriter.get()); }
     if (rank == 0) { std::cout << "Data generated for " << d.numParticlesGlobal << " global particles\n"; }
 
-    uint64_t bucketSizeFocus = 64;
+    // Raise via --bucket-size-focus if "LET refine, mode=..." keeps failing to converge: that
+    // means a focus-tree leaf holds more than 512*bucketSizeFocus particles (see checkLayout in
+    // domain/include/cstone/domain/layout.hpp), which a locally dense clump (e.g. disk material
+    // piling up near an accreting star) can exceed regardless of total particle count.
+    uint64_t bucketSizeFocus = parser.get<uint64_t>("--bucket-size-focus", 64);
     // ~100 global nodes per rank to decompose the domain with +-1% accuracy
     uint64_t bucketSize = std::max(bucketSizeFocus, d.numParticlesGlobal / (100 * numRanks));
     Domain   domain(exec, rank, numRanks, bucketSize, bucketSizeFocus, theta, MPI_COMM_WORLD, box);
@@ -160,6 +234,36 @@ int main(int argc, char** argv)
 #ifdef SPHEXA_WITH_VISUALIZATION
     VizAdaptor viz(argc, argv);
 #endif
+
+    // Write assigned (non-halo) particle coordinates for this rank to its own file, if SPHEXA_WRITE_RANK_COORDS=1
+    const char* envWriteRankCoords = std::getenv("SPHEXA_WRITE_RANK_COORDS");
+    if (envWriteRankCoords && std::atoi(envWriteRankCoords) != 0)
+    {
+        std::ofstream rankFile(fs::path(outFile).parent_path() / ("coords_rank" + std::to_string(rank) + ".txt"));
+        rankFile << std::scientific;
+
+        size_t start = domain.startIndex();
+        size_t count = domain.endIndex() - start;
+
+#ifdef USE_CUDA
+        // GPU: copy assigned slice from device to host, then write
+        std::vector<double> hx(count), hy(count), hz(count);
+        cstone::memcpyD2HAsync(exec, d.x.data() + start, count, hx.data());
+        cstone::memcpyD2HAsync(exec, d.y.data() + start, count, hy.data());
+        cstone::memcpyD2HAsync(exec, d.z.data() + start, count, hz.data());
+        cstone::syncGpu(exec);
+        for (size_t i = 0; i < count; ++i)
+        {
+            rankFile << hx[i] << " " << hy[i] << " " << hz[i] << "\n";
+        }
+#else
+        // CPU: host vectors, write directly
+        for (size_t i = 0; i < count; ++i)
+        {
+            rankFile << d.x[start + i] << " " << d.y[start + i] << " " << d.z[start + i] << "\n";
+        }
+#endif
+    }
 
     size_t startIteration    = d.iteration;
     bool   isOutputTriggered = false;
@@ -180,7 +284,7 @@ int main(int argc, char** argv)
             (isOutputStep(d.iteration, writeFreqStr) || isOutputTime(d.ttot - d.minDt, d.ttot, writeFreqStr) ||
              isExtraOutputStep(d.iteration, d.ttot - d.minDt, d.ttot, writeExtra) ||
              (isWallClockReached && writeEnabled) || isOutputTriggered) &&
-            d.iteration > startIteration;
+            (d.iteration > startIteration || writeInitial);
 
         if (isOutputTriggered && propagator->isSynced())
         {
@@ -190,6 +294,7 @@ int main(int argc, char** argv)
             propagator->saveFields(fileWriter.get(), domain.startIndex(), domain.endIndex(), simData, box);
             propagator->save(fileWriter.get());
             fileWriter->closeStep();
+            if (writeHalos) { writeHaloParticles(fileWriter.get(), domain, d, haloFile); }
             isOutputTriggered = false;
         }
         keepRunning = not(stopConditionReached(d.iteration, d.ttot, maxStepStr) || isWallClockReached) ||
@@ -293,8 +398,13 @@ void printHelp(char* name, int rank)
 
         printf("\t--duration \t Maximum wall-clock run time of the simulation in seconds.[MAX_INT]\n\n");
 
+        printf("\t--write-initial \t Also allow output at the first iteration of the run (by default skipped\n"
+               "\t\t\t because it equals the initial conditions), e.g. to dump h and halos after a single step\n\n");
+        printf("\t--write-halos \t\t At every output step, also write the halo particles of each rank\n"
+               "\t\t\t (x,y,z,h,rank,side) to <output>_halos.h5\n\n");
         printf("\t--profile \t\t Enable profiling output,\n\
-                \t Profiling is enabled by default if file output is enabled.\n\n");
+                \t Profiling is enabled by default if file output is enabled.\n\
+                \t With --profile and without -f, only x,y,z,h are written at output steps.\n\n");
 
         printf("\t--profileFreq NUM \t\t [default]: the profiling data is outputted at the end of the simulation,\n\
                 \t NUM<=0:    Disable profiling output,\n\

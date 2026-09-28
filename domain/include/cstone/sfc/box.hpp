@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 
 #include "cstone/cuda/annotation.hpp"
 #include "cstone/primitives/stl.hpp"
@@ -107,6 +108,28 @@ inline double mixDBias()
     return bias;
 }
 
+/*! @brief maximum MixD level difference between an axis and the next finer axis
+ *
+ * Read once from SPHEXA_MIXD_MAX_LEVEL_DIFF, default 3. With the axes sorted by bit depth, each open axis may have
+ * at most this many bits less than the next finer axis, e.g. {21, 18, 13} becomes {21, 18, 15}.
+ */
+inline unsigned mixDMaxLevelDiff()
+{
+    static const unsigned maxDiff = []()
+    {
+        const char* envMaxDiff = std::getenv("SPHEXA_MIXD_MAX_LEVEL_DIFF");
+        if (!envMaxDiff || !*envMaxDiff) { return 3u; }
+        int value = std::atoi(envMaxDiff);
+        if (value < 0)
+        {
+            std::cerr << "SPHEXA_MIXD_MAX_LEVEL_DIFF out of range: " << envMaxDiff << std::endl;
+            std::abort();
+        }
+        return static_cast<unsigned>(value);
+    }();
+    return maxDiff;
+}
+
 /*! @brief stores the coordinate bounds
  *
  * Needs a slightly different behavior in the PBC case than the existing BBox
@@ -132,6 +155,17 @@ public:
 //         const auto axesBits = getBoxDimBits(maxTreeLevel<uint64_t>{});
 //         std::cout << "MixD SFC bits: " << axesBits[0] << " " << axesBits[1] << " " << axesBits[2] << std::endl;
 // #endif
+#ifndef __CUDA_ARCH__
+        // allow overriding the loaded boundary type via SPHEXA_BOUNDARY_TYPE, e.g. "1" for periodic on all axes
+        if (const char* envBoundaryType = std::getenv("SPHEXA_BOUNDARY_TYPE"))
+        {
+            // std::cout << "Overriding boundary type with SPHEXA_BOUNDARY_TYPE=" << envBoundaryType << std::endl;
+            applyEnvBoundaryType(envBoundaryType);
+        }
+    #ifndef SPHEXA_MIXD_DISABLED
+        applyMixDLevelLimit();
+    #endif
+#endif
     }
 
     HOST_DEVICE_FUN constexpr Box(T xmin,
@@ -155,6 +189,17 @@ public:
 //         const auto axesBits = getBoxDimBits(maxTreeLevel<uint64_t>{});
 //         std::cout << "MixD SFC bits: " << axesBits[0] << " " << axesBits[1] << " " << axesBits[2] << std::endl;
 // #endif
+#ifndef __CUDA_ARCH__
+        // allow overriding the loaded boundary type via SPHEXA_BOUNDARY_TYPE, e.g. "1" for periodic on all axes
+        if (const char* envBoundaryType = std::getenv("SPHEXA_BOUNDARY_TYPE"))
+        {
+            // std::cout << "Overriding boundary type with SPHEXA_BOUNDARY_TYPE=" << envBoundaryType << std::endl;
+            applyEnvBoundaryType(envBoundaryType);
+        }
+    #ifndef SPHEXA_MIXD_DISABLED
+        applyMixDLevelLimit();
+    #endif
+#endif
     }
 
     HOST_DEVICE_FUN constexpr T xmin() const { return limits[0]; }
@@ -189,7 +234,11 @@ public:
      */
     HOST_DEVICE_FUN constexpr AxesBits getBoxDimBits(unsigned maxLevels) const
     {
+#ifdef SPHEXA_MIXD_DISABLED
+        return AxesBits{maxLevels, maxLevels, maxLevels};
+#else
         return AxesBits{maxLevels, maxLevels, maxLevels} - axesBits_;
+#endif
     }
 
     //! @brief return the shortest coordinate range in any dimension
@@ -234,29 +283,89 @@ public:
         boundaries[0] = boundaries[1] = boundaries[2] = b;
     }
 
-    //! @brief scale the x/y domain about its center by the factor from SPHEXA_DISK_BOUND_MULTIPLIER
-    void applyEnvDiskBoundMultiplier(const char* envDiskBoundMultiplier)
+    //! @brief parse and validate a SPHEXA_DISK_BOUND_MULTIPLIER value
+    static double parseDiskBoundMultiplier(const char* envDiskBoundMultiplier)
     {
         double multiplier = std::atof(envDiskBoundMultiplier);
         if (multiplier <= 0)
         {
             std::cerr << "SPHEXA_DISK_BOUND_MULTIPLIER out of range: " << envDiskBoundMultiplier << std::endl;
             std::abort();
-        } else if (multiplier == 1)
-        {
-            return;
         }
+        return multiplier;
+    }
+
+    //! @brief scale the [min, max] range of one axis about its center by @p multiplier
+    static void scaleAxisAboutCenter(T& minCoord, T& maxCoord, double multiplier)
+    {
+        T center     = (minCoord + maxCoord) / T(2);
+        T halfExtent = (maxCoord - minCoord) / T(2) * T(multiplier);
+        minCoord     = center - halfExtent;
+        maxCoord     = center + halfExtent;
+    }
+
+    //! @brief scale the x/y domain about its center by the factor from SPHEXA_DISK_BOUND_MULTIPLIER
+    void applyEnvDiskBoundMultiplier(const char* envDiskBoundMultiplier)
+    {
+        double multiplier = parseDiskBoundMultiplier(envDiskBoundMultiplier);
+        if (multiplier == 1) { return; }
 
         for (int axis = 0; axis < 2; ++axis)
         {
-            T center     = (limits[2 * axis] + limits[2 * axis + 1]) / T(2);
-            T halfExtent = (limits[2 * axis + 1] - limits[2 * axis]) / T(2) * T(multiplier);
-            limits[2 * axis]     = center - halfExtent;
-            limits[2 * axis + 1] = center + halfExtent;
+            scaleAxisAboutCenter(limits[2 * axis], limits[2 * axis + 1], multiplier);
         }
     }
 
 private:
+    /*! @brief limit the MixD level difference between axes and widen open axes to match
+     *
+     * Axes are sorted by bit reduction. An open axis may have at most mixDMaxLevelDiff() more reduction than the
+     * next finer axis group, axes with equal reduction stay equal. A limited open axis keeps its minimum coordinate and is
+     * widened towards larger coordinates to maxExtent() / 2^reduction, so its cells become cubic and recomputing the bits from the widened
+     * box gives the limited reduction again. Periodic, fixed and cubic_open axes are never modified.
+     */
+    void applyMixDLevelLimit()
+    {
+        const AxesBits   r       = computeBoxDimBits();
+        const unsigned   maxDiff = mixDMaxLevelDiff();
+        std::array<int, 3> order{0, 1, 2};
+        std::sort(order.begin(), order.end(), [&r](int a, int b) { return r[a] < r[b]; });
+
+        // prevFinal: final reduction of the previous group of axes with equal reduction, groupFinal: of the current
+        AxesBits limited    = r;
+        unsigned prevFinal  = 0;
+        unsigned groupFinal = 0;
+        for (int k = 0; k < 3; ++k)
+        {
+            int  axis     = order[k];
+            bool newGroup = (k == 0 || r[axis] != r[order[k - 1]]);
+            if (newGroup && k > 0) { prevFinal = groupFinal; }
+
+            if (boundaries[axis] == BoundaryType::open) { limited[axis] = std::min(r[axis], prevFinal + maxDiff); }
+            groupFinal = newGroup ? limited[axis] : std::max(groupFinal, limited[axis]);
+        }
+
+        if (limited == r) { return; }
+
+        const T maxDim = maxExtent();
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            if (limited[axis] == r[axis]) { continue; }
+
+            T minCoord  = limits[2 * axis];
+            T newLength = maxDim / T(1ull << limited[axis]);
+            // stay a few ulps below the exact power of 2, such that rounding of the new max limit can't push the
+            // recomputed reduction below limited[axis] when mixDBias() is 0
+            T margin = T(16) * std::numeric_limits<T>::epsilon() * (T(1) + std::abs(minCoord) / newLength);
+            newLength *= T(1) - std::min(margin, T(0.01));
+
+            limits[2 * axis + 1]     = minCoord + newLength;
+            lengths_[axis]           = limits[2 * axis + 1] - limits[2 * axis];
+            inverseLengths_[axis]    = T(1.) / lengths_[axis];
+        }
+        axesBits_ = computeBoxDimBits();
+    }
+
     /*! @brief compute per-axis SFC bit reductions for mixed-dimension (MixD) boxes
      *
      * @return           bit reductions {rx, ry, rz} relative to maxTreeLevel
