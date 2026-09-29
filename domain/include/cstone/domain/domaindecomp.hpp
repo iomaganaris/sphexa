@@ -58,9 +58,10 @@ void uniformBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
     binCounts.back() = countScan.back() - countScan[bins[numBins - 1]];
 }
 
-/*! @brief spacialBins only snaps a rank boundary to an X/Y column boundary if the rank's particle count stays within
- *         this many percent of the current average, otherwise the dense column is cut at the leaf closest to the
- *         balanced count. Set at compile time, e.g. with CMake -DCSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT=5
+/*! @brief spacialBins only snaps a rank boundary to an X/Y column boundary if the boundary stays within this many
+ *         percent of the average particle count per rank from its balanced position, otherwise the dense column is
+ *         cut at the leaf closest to the balanced position. Set at compile time, e.g. with CMake
+ *         -DCSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT=5
  */
 #ifndef CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT
 #define CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT 10
@@ -77,13 +78,15 @@ void uniformBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
  * @param[in]  axesBits   per-axis SFC bit depth {bx, by, bz}, e.g. from Box::getBoxDimBits
  *
  * numColumns = 4^xyDiffWithZ columns tile the X/Y plane, where xyDiffWithZ is the number of octree levels
- * where X and Y still refine but Z has run out of bits (box thin in Z). Ranks are filled in SFC order, each
- * targeting the current average, i.e. the particles not yet assigned divided by the ranks not yet filled.
- * Each boundary is snapped to the nearest column boundary, so a column isn't split across ranks, and each rank
- * gets at least one column when numColumns >= numRanks. If that puts the rank's particle count further than
- * CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT from the current average, typically next to a column holding more
- * particles than the tolerance allows, the boundary is instead placed on the leaf closest to the target count,
- * cutting through the column (and therefore through Z), unless the column boundary is at least as close.
+ * where X and Y still refine but Z has run out of bits (box thin in Z). As in uniformBins, boundary r targets the
+ * balanced cumulative position r * average, with average = total particles / numRanks. Each boundary is snapped
+ * to the nearest column boundary, so a column isn't split across ranks, and each rank gets at least one column
+ * when numColumns >= numRanks. If that puts the boundary further than CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT
+ * of the average from its balanced position, typically next to a column holding more particles than the
+ * tolerance allows, the boundary is instead placed on the leaf closest to the balanced position, cutting through
+ * the column (and therefore through Z), unless the column boundary is at least as close. Since each boundary is
+ * checked against its own balanced position, deviations don't accumulate along the SFC and every rank, including
+ * the last one, holds within 2 * tolerance of the average when all boundaries are snapped.
  * Currently assumes
  * axesBits[0] == axesBits[1] (square X/Y footprint), where the 2D levels sit at the top of the key.
  * Falls back to uniformBins when the box isn't thin in Z (xyDiffWithZ == 0).
@@ -148,16 +151,13 @@ void spacialBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
     };
 
     const double maxDeviation = CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT / 100.0;
+    const double average      = double(countScan.back()) / numRanks;
     bins.front()              = 0;
     bins.back()               = numLeaves;
     for (int r = 1; r < numRanks; ++r)
     {
-        // rank r - 1 starts at leaf bins[r - 1] and ends at the boundary chosen below
-        uint64_t rankStart    = countScan[bins[r - 1]];
-        double currentAverage = double(countScan.back() - rankStart) / (numRanks - r + 1);
-        uint64_t target       = std::min(rankStart + uint64_t(currentAverage), countScan.back());
-        uint64_t minCount     = rankStart + uint64_t((1.0 - maxDeviation) * currentAverage);
-        uint64_t maxCount     = rankStart + uint64_t((1.0 + maxDeviation) * currentAverage);
+        // balanced cumulative position of the boundary between rank r - 1 and rank r
+        uint64_t target = r * average;
 
         auto deviation = [&countScan, target](TreeNodeIndex i)
         { return countScan[i] > target ? countScan[i] - target : target - countScan[i]; };
@@ -178,7 +178,8 @@ void spacialBins(const std::vector<IndexType>& counts, std::span<TreeNodeIndex> 
         else { column = std::max(column, firstColumn); }
         TreeNodeIndex boundary = columnStart(std::min(column, numColumns));
 
-        if (countScan[boundary] < minCount || countScan[boundary] > maxCount)
+        // compared in floating point, such that any tolerance, including infinity, is well defined
+        if (double(deviation(boundary)) > maxDeviation * average)
         {
             // no column boundary within the tolerance, cut through the column at the leaf closest to target
             TreeNodeIndex cut = leaf;

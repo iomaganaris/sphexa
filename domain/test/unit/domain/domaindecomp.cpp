@@ -139,7 +139,7 @@ TEST(DomainDecomposition, spacialBinsSnapToColumn)
         std::vector<unsigned> binCounts(numRanks);
         spacialBins(counts, bins, binCounts, tree.data(), axesBits);
 
-        if (50 <= uint64_t(40 * (1.0 + CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT / 100.0)))
+        if (50 - 40 <= 40 * CSTONE_SPACIAL_BINS_MAX_DEVIATION_PERCENT / 100.0)
         {
             EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 4, 8}));
             EXPECT_EQ(binCounts, (std::vector<unsigned>{50, 30}));
@@ -265,9 +265,9 @@ TEST(DomainDecomposition, spacialBinsCutDenseColumn)
     std::vector<unsigned> binCounts(numRanks);
     spacialBins(counts, bins, binCounts, tree.data(), AxesBits{l, l, l - 2});
 
-    // rank 0: average 25, the end of column 0 gives 24
-    // rank 1: average 76 / 3, the end of column 1 gives 40, cut column 1 after 5 of its leaves instead
-    // rank 2: average 51 / 2, the end of column 2 gives 27
+    // boundary 1: balanced position 25, the end of column 0 is at 24
+    // boundary 2: balanced position 50, the end of column 1 is at 64, cut column 1 after 5 of its leaves at 49
+    // boundary 3: balanced position 75, the end of column 2 is at 76
     EXPECT_EQ(bins, (std::vector<TreeNodeIndex>{0, 2, 7, 12, 26}));
     EXPECT_EQ(binCounts, (std::vector<unsigned>{24, 25, 27, 24}));
 }
@@ -347,10 +347,11 @@ TEST(DomainDecomposition, spacialBinsRandomThinBox)
         {
             EXPECT_LT(bins[r - 1], bins[r]);
 
-            // a rank is either snapped to a column within the tolerance, or cut at the leaf closest to the target
-            double currentAverage = double(numParticles - countScan[bins[r - 1]]) / (numRanks - r + 1);
-            double rankCount      = double(countScan[bins[r]] - countScan[bins[r - 1]]);
-            EXPECT_LE(std::abs(rankCount - currentAverage), std::max(tolerance * currentAverage, double(maxLeafCount)) + 1);
+            // a boundary is either snapped to a column within the tolerance of its balanced position,
+            // or cut at the leaf closest to it
+            double average  = double(numParticles) / numRanks;
+            double position = double(countScan[bins[r]]);
+            EXPECT_LE(std::abs(position - r * average), std::max(tolerance * average, double(maxLeafCount)) + 1);
         }
         for (int r = 0; r < numRanks; ++r)
         {
